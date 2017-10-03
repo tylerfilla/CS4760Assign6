@@ -4,6 +4,7 @@
 # Assignment 3
 #
 
+AR=ar
 CC=gcc
 CFLAGS=-Wall -std=gnu99
 LDFLAGS=
@@ -11,16 +12,25 @@ LDFLAGS=
 %.o: %.c
 	$(CC) -c -o $@ $? $(CFLAGS)
 
-oss: oss.o
-	$(CC) -o $@ $? $(LDFLAGS)
+#
+# Components
+#
 
 all: oss
+
+# clock static library
+clock.a: clock.o
+	$(AR) rcs $@ $?
+
+# oss executable
+oss: oss.o clock.a
+	$(CC) -o $@ $? $(LDFLAGS)
 
 #
 # Cleanup
 #
 
 clean:
-	rm *.o oss
+	rm *.a *.o oss
 
 .PHONY: clean
