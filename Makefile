@@ -19,21 +19,24 @@ LDFLAGS=
 %.a: %.o
 	$(AR) rcs $@ $<
 
+# One part of the project
+%.part: %.o clock.a
+	$(CC) -o $@ $^ $(LDFLAGS)
+
 #
 # Components
 #
 
-all: oss
-
-# 'oss' executable
-oss: oss.o clock.a
-	$(CC) -o $@ $^ $(LDFLAGS)
+all: child.part oss.part
+	mv child.part child
+	mv oss.part oss
 
 #
 # Cleanup
 #
 
 clean:
-	rm *.a *.o oss
+	rm *.a *.o child oss
 
 .PHONY: clean
+.SECONDARY:
