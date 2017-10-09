@@ -9,7 +9,19 @@
 
 int main(int argc, char* argv[])
 {
-    a_clock_t* clock = a_clock_new();
-    a_clock_delete(clock);
+    // Create outgoing clock
+    clock_s* clock = clock_new(CLOCK_MODE_OUT);
+
+    clock_start(clock);
+
+    while (1)
+    {
+    }
+
+    clock_stop(clock);
+
+    // Destroy clock
+    clock_delete(clock);
+
     return 0;
 }

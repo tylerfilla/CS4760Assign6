@@ -9,8 +9,15 @@ CC=gcc
 CFLAGS=-Wall -std=gnu99
 LDFLAGS=
 
+#
+# Patterns
+#
+
 %.o: %.c
-	$(CC) -c -o $@ $? $(CFLAGS)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+%.a: %.o
+	$(AR) rcs $@ $<
 
 #
 # Components
@@ -18,13 +25,9 @@ LDFLAGS=
 
 all: oss
 
-# clock static library
-clock.a: clock.o
-	$(AR) rcs $@ $?
-
-# oss executable
+# 'oss' executable
 oss: oss.o clock.a
-	$(CC) -o $@ $? $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 #
 # Cleanup

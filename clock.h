@@ -4,28 +4,64 @@
  * Assignment 3
  */
 
+#ifndef CLOCK_H
+#define CLOCK_H
+
+/**
+ * Mode indicating a clock only reads from its internal memory structures.
+ */
+#define CLOCK_MODE_IN 0
+
+/**
+ * Mode indicating a clock writes to its internal memory structures.
+ */
+#define CLOCK_MODE_OUT 1
+
+/**
+ * State indicating a clock is not running.
+ */
+#define CLOCK_NOT_RUNNING 0
+
+/**
+ * State indicating a clock is running.
+ */
+#define CLOCK_RUNNING 1
+
+typedef struct __clock_mem_s __clock_mem_s;
+
 typedef struct
 {
+    /** Clock mode. */
+    int mode;
+
+    /** Whether the clock is currently running. */
+    int running;
+
+    /** Shared memory ID. */
     int shmid;
-} a_clock_t;
+
+    /** Internal memory structure. */
+    __clock_mem_s* __mem;
+} clock_s;
 
 /**
  * Create a clock instance.
  */
-#define a_clock_new() a_clock_construct(malloc(sizeof(a_clock_t)))
+#define clock_new(mode) clock_construct(malloc(sizeof(clock_s)), mode)
 
 /**
  * Destroy a clock instance.
  */
-#define a_clock_delete(clock) free(a_clock_destruct(clock))
+#define clock_delete(clock) free(clock_destruct(clock))
 
 /**
  * Construct a clock instance.
  *
- * @param clock The clock instance
+ * @param self The clock instance
+ * @param mode The clock mode
  * @return The clock instance, constructed
  */
-a_clock_t* a_clock_construct(a_clock_t* clock);
+clock_s* clock_construct(clock_s* clock, int mode);
 
 /**
  * Destruct a clock instance.
@@ -33,4 +69,45 @@ a_clock_t* a_clock_construct(a_clock_t* clock);
  * @param clock The clock instance
  * @return The clock instance, destructed
  */
-a_clock_t* a_clock_destruct(a_clock_t* clock);
+clock_s* clock_destruct(clock_s* clock);
+
+/**
+ * Start a clock instance.
+ *
+ * @param clock The clock instance
+ * @return Zero on success, otherwise nonzero
+ */
+int clock_start(clock_s* clock);
+
+/**
+ * Stop a clock instance.
+ *
+ * @param clock The clock instance
+ * @return Zero on success, otherwise nonzero
+ */
+int clock_stop(clock_s* clock);
+
+/**
+ * Tick a clock instance.
+ *
+ * @param clock The clock instance
+ */
+void clock_tick(clock_s* clock);
+
+/**
+ * Retrieve the current number of seconds elapsed since a clock started.
+ *
+ * @param clock The clock instance
+ * @return Its second count
+ */
+long clock_get_seconds(clock_s* clock);
+
+/**
+ * Retrieve the current number of nanoseconds elapsed since the last second since a clock started.
+ *
+ * @param clock The clock instance
+ * @return Its nanosecond count
+ */
+int clock_get_nanos(clock_s* clock);
+
+#endif // #ifndef CLOCK_H
