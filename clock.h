@@ -95,19 +95,19 @@ int clock_stop(clock_s* clock);
 void clock_tick(clock_s* clock);
 
 /**
- * Retrieve the current number of seconds elapsed since a clock started.
- *
- * @param clock The clock instance
- * @return Its second count
- */
-long clock_get_seconds(clock_s* clock);
-
-/**
  * Retrieve the current number of nanoseconds elapsed since the last second since a clock started.
  *
  * @param clock The clock instance
  * @return Its nanosecond count
  */
 int clock_get_nanos(clock_s* clock);
+
+/**
+ * Retrieve the current number of seconds elapsed since a clock started.
+ *
+ * @param clock The clock instance
+ * @return Its second count
+ */
+long clock_get_seconds(clock_s* clock);
 
 #endif // #ifndef CLOCK_H

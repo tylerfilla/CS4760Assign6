@@ -16,16 +16,19 @@
 #include "clock.h"
 #include "perrorf.h"
 
+#define FTOK_PATH "/bin/echo"
+#define FTOK_CHAR 'R'
+
 /**
- * Inner memory structure for clock function. This gets shared among processes.
+ * Internal memory structure for clocks. This gets shared among processes.
  */
 struct __clock_mem_s
 {
+    /** Nanosecond counter. */
+    int nanos;
+
     /** Second counter. */
     long seconds;
-
-    /** Nanosecond counter. */
-    int nanoseconds;
 };
 
 clock_s* clock_construct(clock_s* self, int mode)
@@ -40,6 +43,12 @@ clock_s* clock_construct(clock_s* self, int mode)
 
 clock_s* clock_destruct(clock_s* self)
 {
+    // Stop clock if running
+    if (self->running)
+    {
+        clock_stop(self);
+    }
+
     return self;
 }
 
@@ -50,6 +59,36 @@ static int clock_start_in(clock_s* self)
 {
     if (self->running)
         return -100;
+
+    errno = 0;
+
+    // Obtain the IPC key
+    key_t key = ftok(FTOK_PATH, FTOK_CHAR);
+    if (errno)
+    {
+        perrorf("unable to obtain key: ftok(3) failed");
+        return 1;
+    }
+
+    // Get ID of the shared memory segment
+    int shmid = shmget(key, 0, 0);
+    if (errno)
+    {
+        perrorf("unable to get shm: shmget(2) failed");
+        return 2;
+    }
+
+    // Attach shared memory segment
+    void* shm = shmat(shmid, NULL, 0);
+    if (errno)
+    {
+        perrorf("unable to attach shm: shmat(2) failed");
+        return 3;
+    }
+
+    self->running = CLOCK_RUNNING;
+    self->shmid = shmid;
+    self->__mem = shm;
 
     return -2;
 }
@@ -62,8 +101,10 @@ static int clock_start_out(clock_s* self)
     if (self->running)
         return -100;
 
+    errno = 0;
+
     // Obtain the IPC key
-    key_t key = ftok("/bin/bash", 'Q');
+    key_t key = ftok(FTOK_PATH, FTOK_CHAR);
     if (errno)
     {
         perrorf("unable to obtain key: ftok(3) failed");
@@ -79,7 +120,7 @@ static int clock_start_out(clock_s* self)
     }
 
     // Attach shared memory segment
-    __clock_mem_s* mem = shmat(shmid, NULL, 0);
+    void* shm = shmat(shmid, NULL, 0);
     if (errno)
     {
         perrorf("unable to attach shm: shmat(2) failed");
@@ -88,7 +129,7 @@ static int clock_start_out(clock_s* self)
         shmctl(shmid, IPC_RMID, NULL);
         if (errno)
         {
-            perrorf("unable to clean up shm: shmctl(2) failed");
+            perrorf("unable to remove shm: shmctl(2) failed");
             return 4;
         }
 
@@ -97,7 +138,7 @@ static int clock_start_out(clock_s* self)
 
     self->running = CLOCK_RUNNING;
     self->shmid = shmid;
-    self->__mem = mem;
+    self->__mem = shm;
 
     return -2;
 }
@@ -123,6 +164,20 @@ static int clock_stop_in(clock_s* self)
     if (self->running)
         return -100;
 
+    errno = 0;
+
+    // Detach shared memory segment
+    shmdt(self->__mem);
+    if (errno)
+    {
+        perrorf("unable to detach shm: shmdt(2) failed");
+        return 1;
+    }
+
+    self->running = CLOCK_NOT_RUNNING;
+    self->shmid = 0;
+    self->__mem = NULL;
+
     return -2;
 }
 
@@ -134,7 +189,26 @@ static int clock_stop_out(clock_s* self)
     if (!self->running)
         return -100;
 
-    //shmdt(self->shmid
+    errno = 0;
+
+    // Detach shared memory segment
+    shmdt(self->__mem);
+    if (errno)
+    {
+        perrorf("unable to detach shm: shmdt(2) failed");
+        return 1;
+    }
+
+    shmctl(self->shmid, IPC_RMID, NULL);
+    if (errno)
+    {
+        perrorf("unable to remove shm: shmctl(2) failed");
+        return 2;
+    }
+
+    self->running = CLOCK_NOT_RUNNING;
+    self->shmid = 0;
+    self->__mem = NULL;
 
     return -2;
 }
@@ -154,14 +228,28 @@ int clock_stop(clock_s* self)
 
 void clock_tick(clock_s* self)
 {
-}
+    int nanos = self->__mem->nanos;
+    long seconds = self->__mem->seconds;
 
-long clock_get_seconds(clock_s* self)
-{
-    return 0l;
+    // In this simulation, we increment by 8 nanoseconds per tick
+    // Overflow into seconds once maximum fractional second is reached
+    nanos += 8;
+    if (nanos >= 1000000000)
+    {
+        seconds += nanos / 1000000000;
+        nanos %= 1000000000;
+    }
+
+    self->__mem->nanos = nanos;
+    self->__mem->seconds = seconds;
 }
 
 int clock_get_nanos(clock_s* self)
 {
-    return 0;
+    return self->__mem->nanos;
+}
+
+long clock_get_seconds(clock_s* self)
+{
+    return self->__mem->seconds;
 }
