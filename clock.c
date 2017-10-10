@@ -10,12 +10,12 @@
 //
 
 #include <errno.h>
+#include <stdio.h>
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
 #include "clock.h"
-#include "perrorf.h"
 
 #define FTOK_PATH "/bin/echo"
 #define FTOK_CHAR 'C'
@@ -28,27 +28,6 @@ struct __clock_mem_s
     /** Second counter. */
     int seconds;
 };
-
-clock_s* clock_construct(clock_s* self, int mode)
-{
-    self->mode = mode;
-    self->running = CLOCK_NOT_RUNNING;
-    self->shmid = -1;
-    self->__mem = NULL;
-
-    return self;
-}
-
-clock_s* clock_destruct(clock_s* self)
-{
-    // Stop clock if running
-    if (self->running)
-    {
-        clock_stop(self);
-    }
-
-    return self;
-}
 
 /**
  * Start the clock under IN mode.
@@ -64,7 +43,7 @@ static int clock_start_in(clock_s* self)
     key_t key = ftok(FTOK_PATH, FTOK_CHAR);
     if (errno)
     {
-        perrorf("start incoming clock: unable to obtain key: ftok(3) failed");
+        perror("start incoming clock: unable to obtain key: ftok(3) failed");
         return 1;
     }
 
@@ -72,7 +51,7 @@ static int clock_start_in(clock_s* self)
     int shmid = shmget(key, 0, 0);
     if (errno)
     {
-        perrorf("start incoming clock: unable to get shm: shmget(2) failed");
+        perror("start incoming clock: unable to get shm: shmget(2) failed");
         return 2;
     }
 
@@ -80,7 +59,7 @@ static int clock_start_in(clock_s* self)
     void* shm = shmat(shmid, NULL, SHM_RDONLY);
     if (errno)
     {
-        perrorf("start incoming clock: unable to attach shm: shmat(2) failed");
+        perror("start incoming clock: unable to attach shm: shmat(2) failed");
         return 3;
     }
 
@@ -105,7 +84,7 @@ static int clock_start_out(clock_s* self)
     key_t key = ftok(FTOK_PATH, FTOK_CHAR);
     if (errno)
     {
-        perrorf("start outgoing clock: unable to obtain key: ftok(3) failed");
+        perror("start outgoing clock: unable to obtain key: ftok(3) failed");
         return 1;
     }
 
@@ -113,7 +92,7 @@ static int clock_start_out(clock_s* self)
     int shmid = shmget(key, sizeof(__clock_mem_s), IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
-        perrorf("start outgoing clock: unable to create shm: shmget(2) failed");
+        perror("start outgoing clock: unable to create shm: shmget(2) failed");
         return 2;
     }
 
@@ -121,13 +100,13 @@ static int clock_start_out(clock_s* self)
     void* shm = shmat(shmid, NULL, 0);
     if (errno)
     {
-        perrorf("start outgoing clock: unable to attach shm: shmat(2) failed");
+        perror("start outgoing clock: unable to attach shm: shmat(2) failed");
 
         // Destroy segment
         shmctl(shmid, IPC_RMID, NULL);
         if (errno)
         {
-            perrorf("start outgoing clock: unable to remove shm: shmctl(2) failed");
+            perror("start outgoing clock: unable to remove shm: shmctl(2) failed");
             return 4;
         }
 
@@ -139,19 +118,6 @@ static int clock_start_out(clock_s* self)
     self->__mem = shm;
 
     return -2;
-}
-
-int clock_start(clock_s* self)
-{
-    switch (self->mode)
-    {
-    case CLOCK_MODE_IN:
-        return clock_start_in(self);
-    case CLOCK_MODE_OUT:
-        return clock_start_out(self);
-    default:
-        return -1;
-    }
 }
 
 /**
@@ -168,7 +134,7 @@ static int clock_stop_in(clock_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perrorf("stop incoming clock: unable to detach shm: shmdt(2) failed");
+        perror("stop incoming clock: unable to detach shm: shmdt(2) failed");
         return 1;
     }
 
@@ -193,14 +159,14 @@ static int clock_stop_out(clock_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perrorf("stop outgoing clock: unable to detach shm: shmdt(2) failed");
+        perror("stop outgoing clock: unable to detach shm: shmdt(2) failed");
         return 1;
     }
 
     shmctl(self->shmid, IPC_RMID, NULL);
     if (errno)
     {
-        perrorf("stop outgoing clock: unable to remove shm: shmctl(2) failed");
+        perror("stop outgoing clock: unable to remove shm: shmctl(2) failed");
         return 2;
     }
 
@@ -211,17 +177,47 @@ static int clock_stop_out(clock_s* self)
     return -2;
 }
 
-int clock_stop(clock_s* self)
+clock_s* clock_construct(clock_s* self, int mode)
 {
+    self->mode = mode;
+    self->running = CLOCK_NOT_RUNNING;
+    self->shmid = -1;
+    self->__mem = NULL;
+
     switch (self->mode)
     {
     case CLOCK_MODE_IN:
-        return clock_stop_in(self);
+        clock_start_in(self);
+        break;
     case CLOCK_MODE_OUT:
-        return clock_stop_out(self);
+        clock_start_out(self);
+        break;
     default:
-        return -1;
+        break;
     }
+
+    return self;
+}
+
+clock_s* clock_destruct(clock_s* self)
+{
+    // Stop clock if running
+    if (self->running)
+    {
+        switch (self->mode)
+        {
+        case CLOCK_MODE_IN:
+            clock_stop_in(self);
+            break;
+        case CLOCK_MODE_OUT:
+            clock_stop_out(self);
+            break;
+        default:
+            break;
+        }
+    }
+
+    return self;
 }
 
 void clock_tick(clock_s* self)

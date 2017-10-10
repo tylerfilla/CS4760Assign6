@@ -72,22 +72,6 @@ clock_s* clock_construct(clock_s* clock, int mode);
 clock_s* clock_destruct(clock_s* clock);
 
 /**
- * Start a clock instance.
- *
- * @param clock The clock instance
- * @return Zero on success, otherwise nonzero
- */
-int clock_start(clock_s* clock);
-
-/**
- * Stop a clock instance.
- *
- * @param clock The clock instance
- * @return Zero on success, otherwise nonzero
- */
-int clock_stop(clock_s* clock);
-
-/**
  * Tick a clock instance.
  *
  * @param clock The clock instance

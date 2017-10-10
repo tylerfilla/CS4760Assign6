@@ -5,13 +5,13 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
 #include "messenger.h"
-#include "perrorf.h"
 
 #define FTOK_PATH "/bin/echo"
 #define FTOK_CHAR 'M'
@@ -36,7 +36,7 @@ static void messenger_open_master(messenger_s* self)
     key_t key = ftok(FTOK_PATH, FTOK_CHAR);
     if (errno)
     {
-        perrorf("open master messenger: unable to obtain key: ftok(3) failed");
+        perror("open master messenger: unable to obtain key: ftok(3) failed");
         exit(1);
     }
 
@@ -44,7 +44,7 @@ static void messenger_open_master(messenger_s* self)
     int shmid = shmget(key, sizeof(__messenger_mem_s), IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
-        perrorf("open master messenger: unable to create shm: shmget(2) failed");
+        perror("open master messenger: unable to create shm: shmget(2) failed");
         exit(2);
     }
 
@@ -52,13 +52,13 @@ static void messenger_open_master(messenger_s* self)
     void* shm = shmat(shmid, NULL, 0);
     if (errno)
     {
-        perrorf("open master messenger: unable to attach shm: shmat(2) failed");
+        perror("open master messenger: unable to attach shm: shmat(2) failed");
 
         // Destroy segment
         shmctl(shmid, IPC_RMID, NULL);
         if (errno)
         {
-            perrorf("open master messenger: unable to remove shm: shmctl(2) failed");
+            perror("open master messenger: unable to remove shm: shmctl(2) failed");
             exit(4);
         }
 
@@ -80,7 +80,7 @@ static void messenger_open_slave(messenger_s* self)
     key_t key = ftok(FTOK_PATH, FTOK_CHAR);
     if (errno)
     {
-        perrorf("open slave messenger: unable to obtain key: ftok(3) failed");
+        perror("open slave messenger: unable to obtain key: ftok(3) failed");
         exit(1);
     }
 
@@ -88,7 +88,7 @@ static void messenger_open_slave(messenger_s* self)
     int shmid = shmget(key, 0, 0);
     if (errno)
     {
-        perrorf("open slave messenger: unable to get shm: shmget(2) failed");
+        perror("open slave messenger: unable to get shm: shmget(2) failed");
         exit(2);
     }
 
@@ -96,7 +96,7 @@ static void messenger_open_slave(messenger_s* self)
     void* shm = shmat(shmid, NULL, 0);
     if (errno)
     {
-        perrorf("open slave messenger: unable to attach shm: shmat(2) failed");
+        perror("open slave messenger: unable to attach shm: shmat(2) failed");
         exit(3);
     }
 
@@ -115,14 +115,14 @@ static void messenger_close_master(messenger_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perrorf("close master messenger: unable to detach shm: shmdt(2) failed");
+        perror("close master messenger: unable to detach shm: shmdt(2) failed");
         exit(1);
     }
 
     shmctl(self->shmid, IPC_RMID, NULL);
     if (errno)
     {
-        perrorf("close master messenger: unable to remove shm: shmctl(2) failed");
+        perror("close master messenger: unable to remove shm: shmctl(2) failed");
         exit(2);
     }
 
@@ -141,7 +141,7 @@ static void messenger_close_slave(messenger_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perrorf("close slave messenger: unable to detach shm: shmdt(2) failed");
+        perror("close slave messenger: unable to detach shm: shmdt(2) failed");
         exit(1);
     }
 

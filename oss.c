@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include <unistd.h>
 
 #include "clock.h"
@@ -15,6 +16,35 @@
 #define DEFAULT_LOG_FILE_PATH "oss.log"
 #define DEFAULT_MAX_SLAVE_COUNT 5
 #define DEFAULT_TIME_LIMIT 20
+
+static int launch_child()
+{
+    int child_pid = fork();
+    if (child_pid == 0)
+    {
+        // Fork succeeded, now in child
+        // Swap in the child image
+        if (execv("./child", (char* []) { "./child", NULL }))
+        {
+            perror("launch child failed (in child): execv(2) failed");
+            _Exit(1);
+        }
+
+        // This should never happen
+        _Exit(42);
+    }
+    else if (child_pid > 0)
+    {
+        // Fork succeeded, now in parent
+        return child_pid;
+    }
+    else
+    {
+        // Fork failed, still in parent
+        perror("launch child failed (in parent): fork(2) failed");
+        return -1;
+    }
+}
 
 static void print_help(FILE* dest, const char* executable_name)
 {
@@ -34,16 +64,6 @@ static void print_usage(FILE* dest, const char* executable_name)
 
 int main(int argc, char* argv[])
 {
-    // If called without arguments, print usage and exit abnormally
-    if (argc == 1)
-    {
-        print_usage(stderr, argv[0]);
-        return 1;
-    }
-
-    // Flag indicating the program should print help text and exit normally
-    int flag_print_help = 0;
-
     // Other supplied parameters
     char* param_log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
     int param_max_slave_count = DEFAULT_MAX_SLAVE_COUNT;
@@ -62,8 +82,8 @@ int main(int argc, char* argv[])
         switch (opt)
         {
         case 'h':
-            flag_print_help = 1;
-            break;
+            print_help(stdout, argv[0]);
+            return 0;
         case 'l':
             free(param_log_file_path);
             param_log_file_path = strdup(optarg);
@@ -92,33 +112,34 @@ int main(int argc, char* argv[])
         }
         default:
             fprintf(stderr, "invalid option: -%c\n", opt);
+            print_usage(stderr, argv[0]);
             return 1;
         }
     }
 
-    if (flag_print_help)
-    {
-        print_help(stdout, argv[0]);
-        return 0;
-    }
-
-    // Create outgoing clock
+    // Create and start outgoing clock
     clock_s* clock = clock_new(CLOCK_MODE_OUT);
 
     // Create master messenger
     messenger_s* shm_msg = messenger_new(MESSENGER_SIDE_MASTER);
 
-    // Start clock
-    clock_start(clock);
+    // FIXME
+    for (int i = 0; i < 5; ++i)
+    {
+        launch_child();
+    }
 
     while (1)
     {
         // Update clock
         clock_tick(clock);
 
-        // FIXME
-        if (clock_get_seconds(clock) >= 2)
+        // If a message has arrived
+        if (messenger_test(shm_msg))
+        {
+            // FIXME: Messenger should use semaphores internally
             break;
+        }
     }
 
     // Clean stuff up
