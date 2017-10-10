@@ -37,8 +37,14 @@ typedef struct
     /** Whether the clock is currently running. */
     int running;
 
+    /** Whether the clock is currently locked. */
+    int locked;
+
     /** The ID of the shared memory segment used. */
     int shmid;
+
+    /** The ID of the semaphore set protecting the internal memory. */
+    int semid;
 
     /** Internal shared memory structure. */
     __clock_mem_s* __mem;
@@ -79,10 +85,26 @@ clock_s* clock_destruct(clock_s* clock);
 void clock_tick(clock_s* clock);
 
 /**
+ * Lock a clock for exclusive access. This blocks if already locked.
+ *
+ * @param clock The clock instance
+ * @return Zero on success, otherwise nonzero
+ */
+int clock_lock(clock_s* clock);
+
+/**
+ * Unlock a locked clock.
+ *
+ * @param clock The clock instance
+ * @return Zero on success, otherwise nonzero
+ */
+int clock_unlock(clock_s* clock);
+
+/**
  * Retrieve the current number of nanoseconds elapsed since the last second since a clock started.
  *
  * @param clock The clock instance
- * @return Its nanosecond count
+ * @return Its nanosecond count or -1 on failure
  */
 int clock_get_nanos(clock_s* clock);
 
@@ -90,7 +112,7 @@ int clock_get_nanos(clock_s* clock);
  * Retrieve the current number of seconds elapsed since a clock started.
  *
  * @param clock The clock instance
- * @return Its second count
+ * @return Its second count or -1 on failure
  */
 int clock_get_seconds(clock_s* clock);
 

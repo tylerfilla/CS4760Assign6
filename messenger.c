@@ -10,11 +10,15 @@
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/sem.h>
 
 #include "messenger.h"
 
-#define FTOK_PATH "/bin/echo"
-#define FTOK_CHAR 'M'
+#define SHM_FTOK_PATH "/bin/echo"
+#define SHM_FTOK_CHAR 'M'
+
+#define SEM_FTOK_PATH "/bin/ls"
+#define SEM_FTOK_CHAR 'M'
 
 struct __messenger_mem_s
 {
@@ -28,24 +32,28 @@ struct __messenger_mem_s
 /**
  * Open a master side messenger.
  */
-static void messenger_open_master(messenger_s* self)
+static int messenger_open_master(messenger_s* self)
 {
     errno = 0;
 
-    // Obtain the IPC key
-    key_t key = ftok(FTOK_PATH, FTOK_CHAR);
+    //
+    // Shared Memory
+    //
+
+    // Obtain IPC key for shared memory
+    key_t shm_key = ftok(SHM_FTOK_PATH, SHM_FTOK_CHAR);
     if (errno)
     {
-        perror("open master messenger: unable to obtain key: ftok(3) failed");
-        exit(1);
+        perror("open master messenger: unable to obtain shm key: ftok(3) failed");
+        goto fail;
     }
 
-    // Create a shared memory segment
-    int shmid = shmget(key, sizeof(__messenger_mem_s), IPC_CREAT | IPC_EXCL | 0600);
+    // Create shared memory segment
+    int shmid = shmget(shm_key, sizeof(__messenger_mem_s), IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
-        perror("open master messenger: unable to create shm: shmget(2) failed");
-        exit(2);
+        perror("open master messenger: unable to get shm: shmget(2) failed");
+        goto fail;
     }
 
     // Attach shared memory segment
@@ -53,43 +61,80 @@ static void messenger_open_master(messenger_s* self)
     if (errno)
     {
         perror("open master messenger: unable to attach shm: shmat(2) failed");
+        goto fail;
+    }
 
-        // Destroy segment
+    int semid = 1337; // fixme
+
+    //
+    // Semaphore
+    //
+
+    self->shmid = shmid;
+    self->semid = semid;
+    self->__mem = shm;
+
+    return 0;
+
+fail:
+    // Detach shared memory, if needed
+    if (shm != NULL)
+    {
+        shmdt(shm);
+        if (errno)
+        {
+            perror("open master messenger: cleanup: unable to detach shm: shmdt(2) failed");
+        }
+    }
+
+    // Remove shared memory, if needed
+    if (shmid >= 0)
+    {
         shmctl(shmid, IPC_RMID, NULL);
         if (errno)
         {
-            perror("open master messenger: unable to remove shm: shmctl(2) failed");
-            exit(4);
+            perror("open master messenger: cleanup: unable to remove shm: shmctl(2) failed");
         }
-
-        exit(3);
     }
 
-    self->shmid = shmid;
-    self->__mem = shm;
+    // Remove semaphore set, if needed
+    if (semid >= 0)
+    {
+        semctl(semid, 0, IPC_RMID);
+        if (errno)
+        {
+            perror("open master messenger: cleanup: unable to remove sem: semctl(2) failed");
+        }
+    }
+
+    return 1;
 }
 
 /**
  * Open a slave side messenger.
  */
-static void messenger_open_slave(messenger_s* self)
+static int messenger_open_slave(messenger_s* self)
 {
     errno = 0;
 
-    // Obtain the IPC key
-    key_t key = ftok(FTOK_PATH, FTOK_CHAR);
+    //
+    // Shared Memory
+    //
+
+    // Obtain IPC key for shared memory
+    key_t shm_key = ftok(SHM_FTOK_PATH, SHM_FTOK_CHAR);
     if (errno)
     {
-        perror("open slave messenger: unable to obtain key: ftok(3) failed");
-        exit(1);
+        perror("open slave messenger: unable to obtain shm key: ftok(3) failed");
+        goto fail;
     }
 
     // Get ID of the shared memory segment
-    int shmid = shmget(key, 0, 0);
+    int shmid = shmget(shm_key, 0, 0);
     if (errno)
     {
         perror("open slave messenger: unable to get shm: shmget(2) failed");
-        exit(2);
+        goto fail;
     }
 
     // Attach shared memory segment
@@ -97,43 +142,101 @@ static void messenger_open_slave(messenger_s* self)
     if (errno)
     {
         perror("open slave messenger: unable to attach shm: shmat(2) failed");
-        exit(3);
+        goto fail;
+    }
+
+    //
+    // Semaphore
+    //
+
+    // Obtain IPC for semaphore set
+    key_t sem_key = ftok(SEM_FTOK_PATH, SEM_FTOK_CHAR);
+    if (errno)
+    {
+        perror("open slave messenger: unable to obtain sem key: ftok(3) failed");
+        goto fail;
+    }
+
+    // Obtain existing semaphore set
+    int semid = semget(sem_key, 0, 0);
+    if (errno)
+    {
+        perror("open slave messenger: unable to get sem: semget(2) failed");
+        goto fail;
     }
 
     self->shmid = shmid;
+    self->semid = semid;
     self->__mem = shm;
+
+    return 0;
+
+fail:
+    // Detach shared memory, if needed
+    if (shm != NULL)
+    {
+        shmdt(shm);
+        if (errno)
+        {
+            perror("open slave messenger: cleanup: unable to detach shm: shmdt(2) failed");
+        }
+    }
+
+    return 1;
 }
 
 /**
  * Close a master side messenger.
  */
-static void messenger_close_master(messenger_s* self)
+static int messenger_close_master(messenger_s* self)
 {
     errno = 0;
+
+    //
+    // Shared Memory
+    //
 
     // Detach shared memory segment
     shmdt(self->__mem);
     if (errno)
     {
         perror("close master messenger: unable to detach shm: shmdt(2) failed");
-        exit(1);
+        goto fail;
     }
 
     shmctl(self->shmid, IPC_RMID, NULL);
     if (errno)
     {
         perror("close master messenger: unable to remove shm: shmctl(2) failed");
-        exit(2);
+        goto fail;
     }
 
-    self->shmid = 0;
+    //
+    // Semaphore
+    //
+
+    // Remove semaphore set
+    semctl(self->semid, 0, IPC_RMID);
+    if (errno)
+    {
+        perror("close master messenger: unable to remove sem: semctl(2) failed");
+        goto fail;
+    }
+
+    self->shmid = -1;
+    self->semid = -1;
     self->__mem = NULL;
+
+    return 0;
+
+fail:
+    return 1;
 }
 
 /**
  * Close a slave side messenger.
  */
-static void messenger_close_slave(messenger_s* self)
+static int messenger_close_slave(messenger_s* self)
 {
     errno = 0;
 
@@ -142,17 +245,24 @@ static void messenger_close_slave(messenger_s* self)
     if (errno)
     {
         perror("close slave messenger: unable to detach shm: shmdt(2) failed");
-        exit(1);
+        goto fail;
     }
 
-    self->shmid = 0;
+    self->shmid = -1;
+    self->semid = -1;
     self->__mem = NULL;
+
+    return 0;
+
+fail:
+    return 1;
 }
 
 messenger_s* messenger_construct(messenger_s* self, int side)
 {
     self->side = side;
     self->shmid = -1;
+    self->semid = -1;
 
     // Open the messenger
     switch (side)
@@ -186,6 +296,42 @@ messenger_s* messenger_destruct(messenger_s* self)
     }
 
     return self;
+}
+
+int messenger_lock(messenger_s* self)
+{
+    errno = 0;
+
+    // Try to increment semaphore
+    struct sembuf buf = { 0, -1, 0 };
+    semop(self->semid, &buf, 1);
+    if (errno)
+    {
+        perror("messenger lock: unable to increment sem: semop(2) failed");
+        return 1;
+    }
+
+    self->locked = 1;
+
+    return 0;
+}
+
+int messenger_unlock(messenger_s* self)
+{
+    errno = 0;
+
+    // Try to decrement semaphore
+    struct sembuf buf = { 0, 1, 0 };
+    semop(self->semid, &buf, 0);
+    if (errno)
+    {
+        perror("messenger unlock: unable to decrement sem: semop(2) failed");
+        return 1;
+    }
+
+    self->locked = 0;
+
+    return 0;
 }
 
 int messenger_test(messenger_s* self)

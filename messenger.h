@@ -33,8 +33,14 @@ typedef struct
     /** The local side of the messenger channel. */
     int side;
 
+    /** Whether the messenger is currently locked. */
+    int locked;
+
     /** The ID of the shared memory segment used. */
     int shmid;
+
+    /** The ID of the semaphore set protecting the internal memory. */
+    int semid;
 
     /** Internal shared memory structure. */
     __messenger_mem_s* __mem;
@@ -66,6 +72,22 @@ messenger_s* messenger_construct(messenger_s* messenger, int side);
  * @return The messenger instance, destructed
  */
 messenger_s* messenger_destruct(messenger_s* messenger);
+
+/**
+ * Lock the messenger for exclusive access. This blocks if already locked.
+ *
+ * @param messenger The messenger instance
+ * @return Zero on success, otherwise nonzero
+ */
+int messenger_lock(messenger_s* messenger);
+
+/**
+ * Unlock a locked messenger.
+ *
+ * @param messenger The messenger instance
+ * @return Zero on success, otherwise nonzero
+ */
+int messenger_unlock(messenger_s* messenger);
 
 /**
  * Determine if a messenger has a message waiting.
