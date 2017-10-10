@@ -79,7 +79,7 @@ static int clock_start_in(clock_s* self)
     }
 
     // Attach shared memory segment
-    void* shm = shmat(shmid, NULL, 0);
+    void* shm = shmat(shmid, NULL, SHM_RDONLY);
     if (errno)
     {
         perrorf("unable to attach shm: shmat(2) failed");
