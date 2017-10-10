@@ -10,6 +10,7 @@
 //
 
 #include <errno.h>
+
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
@@ -17,11 +18,8 @@
 #include "perrorf.h"
 
 #define FTOK_PATH "/bin/echo"
-#define FTOK_CHAR 'R'
+#define FTOK_CHAR 'C'
 
-/**
- * Internal memory structure for clocks. This gets shared among processes.
- */
 struct __clock_mem_s
 {
     /** Nanosecond counter. */
@@ -66,7 +64,7 @@ static int clock_start_in(clock_s* self)
     key_t key = ftok(FTOK_PATH, FTOK_CHAR);
     if (errno)
     {
-        perrorf("unable to obtain key: ftok(3) failed");
+        perrorf("start incoming clock: unable to obtain key: ftok(3) failed");
         return 1;
     }
 
@@ -74,15 +72,15 @@ static int clock_start_in(clock_s* self)
     int shmid = shmget(key, 0, 0);
     if (errno)
     {
-        perrorf("unable to get shm: shmget(2) failed");
+        perrorf("start incoming clock: unable to get shm: shmget(2) failed");
         return 2;
     }
 
-    // Attach shared memory segment
+    // Attach shared memory segment as read-only
     void* shm = shmat(shmid, NULL, SHM_RDONLY);
     if (errno)
     {
-        perrorf("unable to attach shm: shmat(2) failed");
+        perrorf("start incoming clock: unable to attach shm: shmat(2) failed");
         return 3;
     }
 
@@ -107,7 +105,7 @@ static int clock_start_out(clock_s* self)
     key_t key = ftok(FTOK_PATH, FTOK_CHAR);
     if (errno)
     {
-        perrorf("unable to obtain key: ftok(3) failed");
+        perrorf("start outgoing clock: unable to obtain key: ftok(3) failed");
         return 1;
     }
 
@@ -115,7 +113,7 @@ static int clock_start_out(clock_s* self)
     int shmid = shmget(key, sizeof(__clock_mem_s), IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
-        perrorf("unable to create shm: shmget(2) failed");
+        perrorf("start outgoing clock: unable to create shm: shmget(2) failed");
         return 2;
     }
 
@@ -123,13 +121,13 @@ static int clock_start_out(clock_s* self)
     void* shm = shmat(shmid, NULL, 0);
     if (errno)
     {
-        perrorf("unable to attach shm: shmat(2) failed");
+        perrorf("start outgoing clock: unable to attach shm: shmat(2) failed");
 
         // Destroy segment
         shmctl(shmid, IPC_RMID, NULL);
         if (errno)
         {
-            perrorf("unable to remove shm: shmctl(2) failed");
+            perrorf("start outgoing clock: unable to remove shm: shmctl(2) failed");
             return 4;
         }
 
@@ -170,7 +168,7 @@ static int clock_stop_in(clock_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perrorf("unable to detach shm: shmdt(2) failed");
+        perrorf("stop incoming clock: unable to detach shm: shmdt(2) failed");
         return 1;
     }
 
@@ -195,14 +193,14 @@ static int clock_stop_out(clock_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perrorf("unable to detach shm: shmdt(2) failed");
+        perrorf("stop outgoing clock: unable to detach shm: shmdt(2) failed");
         return 1;
     }
 
     shmctl(self->shmid, IPC_RMID, NULL);
     if (errno)
     {
-        perrorf("unable to remove shm: shmctl(2) failed");
+        perrorf("stop outgoing clock: unable to remove shm: shmctl(2) failed");
         return 2;
     }
 

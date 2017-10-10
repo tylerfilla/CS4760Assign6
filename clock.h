@@ -37,10 +37,10 @@ typedef struct
     /** Whether the clock is currently running. */
     int running;
 
-    /** Shared memory ID. */
+    /** The ID of the shared memory segment used. */
     int shmid;
 
-    /** Internal memory structure. */
+    /** Internal shared memory structure. */
     __clock_mem_s* __mem;
 } clock_s;
 

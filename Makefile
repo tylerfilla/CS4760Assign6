@@ -9,6 +9,9 @@ CC=gcc
 CFLAGS=-Wall -std=gnu99
 LDFLAGS=
 
+EXECUTABLES=child oss
+LIBRARIES=clock.a messenger.a
+
 #
 # Patterns
 #
@@ -20,13 +23,14 @@ LDFLAGS=
 	$(AR) rcs $@ $<
 
 # One part of the project
-%.part: %.o clock.a
+%.part: %.o $(LIBRARIES)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 #
 # Components
 #
 
+# 'child' and 'oss' executables
 all: child.part oss.part
 	mv child.part child
 	mv oss.part oss
@@ -36,7 +40,7 @@ all: child.part oss.part
 #
 
 clean:
-	rm *.a *.o child oss
+	rm *.a *.o $(EXECUTABLES)
 
 .PHONY: clean
 .SECONDARY:

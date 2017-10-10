@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "clock.h"
+#include "messenger.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
 #define DEFAULT_MAX_SLAVE_COUNT 5
@@ -104,6 +105,8 @@ int main(int argc, char* argv[])
     // Create outgoing clock
     clock_s* clock = clock_new(CLOCK_MODE_OUT);
 
+    // Create master messenger
+    messenger_s* shm_msg = messenger_new(MESSENGER_SIDE_MASTER);
     // Start clock
     clock_start(clock);
 
@@ -117,7 +120,8 @@ int main(int argc, char* argv[])
             break;
     }
 
-    // Cleanup
+    // Clean stuff up
+    messenger_delete(shm_msg);
     clock_delete(clock);
     free(param_log_file_path);
 
