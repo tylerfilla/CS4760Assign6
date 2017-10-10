@@ -107,6 +107,7 @@ int main(int argc, char* argv[])
 
     // Create master messenger
     messenger_s* shm_msg = messenger_new(MESSENGER_SIDE_MASTER);
+
     // Start clock
     clock_start(clock);
 

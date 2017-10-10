@@ -108,6 +108,6 @@ int clock_get_nanos(clock_s* clock);
  * @param clock The clock instance
  * @return Its second count
  */
-long clock_get_seconds(clock_s* clock);
+int clock_get_seconds(clock_s* clock);
 
 #endif // #ifndef CLOCK_H

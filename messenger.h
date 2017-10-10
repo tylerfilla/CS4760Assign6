@@ -17,6 +17,15 @@
  */
 #define MESSENGER_SIDE_SLAVE 1
 
+typedef struct messenger_msg_s
+{
+    /** An integer argument. */
+    int arg1;
+
+    /** An integer argument. */
+    int arg2;
+} messenger_msg_s;
+
 typedef struct __messenger_mem_s __messenger_mem_s;
 
 typedef struct
@@ -57,5 +66,29 @@ messenger_s* messenger_construct(messenger_s* messenger, int side);
  * @return The messenger instance, destructed
  */
 messenger_s* messenger_destruct(messenger_s* messenger);
+
+/**
+ * Determine if a messenger has a message waiting.
+ *
+ * @param messenger The messenger instance
+ * @return Nonzero if such is the case, otherwise zero
+ */
+int messenger_test(messenger_s* messenger);
+
+/**
+ * Remove and return a waiting message from a messenger.
+ *
+ * @param messenger The messenger instance
+ * @return The message
+ */
+messenger_msg_s messenger_poll(messenger_s* messenger);
+
+/**
+ * Set the waiting message on a messenger.
+ *
+ * @param messenger The messenger instance
+ * @param msg The message
+ */
+void messenger_offer(messenger_s* messenger, messenger_msg_s msg);
 
 #endif // #ifndef MESSENGER_H

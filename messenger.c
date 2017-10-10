@@ -16,11 +16,13 @@
 #define FTOK_PATH "/bin/echo"
 #define FTOK_CHAR 'M'
 
-
 struct __messenger_mem_s
 {
+    /** Whether a message is waiting. */
+    int waiting;
+
     /** The message data. */
-    int message;
+    messenger_msg_s msg;
 };
 
 /**
@@ -184,4 +186,22 @@ messenger_s* messenger_destruct(messenger_s* self)
     }
 
     return self;
+}
+
+int messenger_test(messenger_s* self)
+{
+    return self->__mem->waiting;
+}
+
+messenger_msg_s messenger_poll(messenger_s* self)
+{
+    messenger_msg_s msg = self->__mem->msg;
+    self->__mem->waiting = 0;
+    return msg;
+}
+
+void messenger_offer(messenger_s* self, messenger_msg_s msg)
+{
+    self->__mem->msg = msg;
+    self->__mem->waiting = 1;
 }

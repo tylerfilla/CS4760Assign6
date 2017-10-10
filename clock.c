@@ -26,7 +26,7 @@ struct __clock_mem_s
     int nanos;
 
     /** Second counter. */
-    long seconds;
+    int seconds;
 };
 
 clock_s* clock_construct(clock_s* self, int mode)
@@ -227,7 +227,7 @@ int clock_stop(clock_s* self)
 void clock_tick(clock_s* self)
 {
     int nanos = self->__mem->nanos;
-    long seconds = self->__mem->seconds;
+    int seconds = self->__mem->seconds;
 
     // In this simulation, we increment by 8 nanoseconds per tick
     // Overflow into seconds once maximum fractional second is reached
@@ -247,7 +247,7 @@ int clock_get_nanos(clock_s* self)
     return self->__mem->nanos;
 }
 
-long clock_get_seconds(clock_s* self)
+int clock_get_seconds(clock_s* self)
 {
     return self->__mem->seconds;
 }
