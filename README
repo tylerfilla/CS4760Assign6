@@ -1,0 +1,63 @@
+Tyler Filla
+CS 4760
+Assignment 3
+
+This project uses two independent programs compiled from a combination of respective and shared source code. The
+assignment hints at possible expansion of this program in potentially a future assignment, so I made it a goal to make
+the code highly modular. The two programs both link with two libraries I call "clock" and "messenger."
+
+The clock library defines a clock object and the messenger library a messenger object. The clock object manages the
+simulated operating system's clock. The messenger object manages message-passing between oss and child processes. Both
+store their data in shared memory and protect against concurrent access using binary semaphores (both the System V type)
+through simple APIs.
+
+Directory Structure
+===================
+
+Project Root
+ |
+ +-- child.c        (the main file for the child program)
+ |
+ +-- clock.c        (the main file for the clock library)
+ |
+ +-- clock.h        (the corresponding header file for clock.c)
+ |
+ +-- Makefile
+ |
+ +-- messenger.c    (the main file for the messenger library)
+ |
+ +-- messenger.h    (the corresponding header file for messenger.c)
+ |
+ +-- oss.c          (the main file for the oss program)
+ |
+ +-- README
+
+Building
+========
+
+To build, run the following command as usual:
+
+$ make
+
+Usage
+=====
+
+At any time, run the following command for help:
+
+$ ./oss -h
+
+The program will run with the assigned defaults if you run the following:
+
+$ ./oss
+
+Defaults:
+- Log file: ./oss.log
+- Maximum instantaneous slaves: 5
+- Real time limit: 20 seconds
+
+Cleanup
+=======
+
+To clean up after a build, use the following command:
+
+$ make clean
