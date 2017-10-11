@@ -18,11 +18,8 @@
 
 #include "clock.h"
 
-#define SHM_FTOK_PATH "/bin/echo"
 #define SHM_FTOK_CHAR 'C'
-
-#define SEM_FTOK_PATH "/bin/ls"
-#define SEM_FTOK_CHAR 'C'
+#define SEM_FTOK_CHAR 'D'
 
 struct __clock_mem_s
 {
@@ -48,7 +45,7 @@ static int clock_start_in(clock_s* self)
     //
 
     // Obtain IPC key for shared memory
-    key_t shm_key = ftok(SHM_FTOK_PATH, SHM_FTOK_CHAR);
+    key_t shm_key = ftok(".", SHM_FTOK_CHAR);
     if (errno)
     {
         perror("start incoming clock: unable to obtain shm key: ftok(3) failed");
@@ -76,7 +73,7 @@ static int clock_start_in(clock_s* self)
     //
 
     // Obtain IPC key for semaphore set
-    key_t sem_key = ftok(SEM_FTOK_PATH, SEM_FTOK_CHAR);
+    key_t sem_key = ftok(".", SEM_FTOK_CHAR);
     if (errno)
     {
         perror("start incoming clock: unable to obtain sem key: ftok(3) failed");
@@ -126,48 +123,53 @@ static int clock_start_out(clock_s* self)
     // Shared Memory
     //
 
+    int shmid = -1;
+    void* shm = (void*) -1;
+
     // Obtain IPC key for shared memory
-    key_t shm_key = ftok(SHM_FTOK_PATH, SHM_FTOK_CHAR);
+    key_t shm_key = ftok(".", SHM_FTOK_CHAR);
     if (errno)
     {
         perror("start outgoing clock: unable to obtain shm key: ftok(3) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     // Create shared memory segment
-    int shmid = shmget(shm_key, sizeof(__clock_mem_s), IPC_CREAT | IPC_EXCL | 0600);
+    shmid = shmget(shm_key, sizeof(__clock_mem_s), IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
         perror("start outgoing clock: unable to get shm: shmget(2) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     // Attach shared memory segment
-    void* shm = shmat(shmid, NULL, 0);
+    shm = shmat(shmid, NULL, 0);
     if (errno)
     {
         perror("start outgoing clock: unable to attach shm: shmat(2) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     //
     // Semaphore
     //
 
+    int semid = -1;
+
     // Obtain IPC key for semaphore set
-    key_t sem_key = ftok(SEM_FTOK_PATH, SEM_FTOK_CHAR);
+    key_t sem_key = ftok(".", SEM_FTOK_CHAR);
     if (errno)
     {
         perror("start outgoing clock: unable to obtain sem key: ftok(3) failed");
-        goto fail;
+        goto fail_sem;
     }
 
     // Create semaphore set with one element
-    int semid = semget(sem_key, 1, IPC_CREAT | IPC_EXCL | 0600);
+    semid = semget(sem_key, 1, IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
         perror("start outgoing clock: unable to get sem: semget(2) failed");
-        goto fail;
+        goto fail_sem;
     }
 
     // Configure unlocked binary semaphore
@@ -175,7 +177,7 @@ static int clock_start_out(clock_s* self)
     if (errno)
     {
         perror("start outgoing clock: unable to set sem value: semctl(2) failed");
-        goto fail;
+        goto fail_sem;
     }
 
     self->running = CLOCK_RUNNING;
@@ -185,7 +187,18 @@ static int clock_start_out(clock_s* self)
 
     return 0;
 
-fail:
+fail_sem:
+    // Remove semaphore set, if needed
+    if (semid >= 0)
+    {
+        semctl(semid, 0, IPC_RMID);
+        if (errno)
+        {
+            perror("start outgoing clock: cleanup: unable to remove sem: semctl(2) failed");
+        }
+    }
+
+fail_shm:
     // Detach shared memory, if needed
     if (shm != NULL)
     {
@@ -203,16 +216,6 @@ fail:
         if (errno)
         {
             perror("start outgoing clock: cleanup: unable to remove shm: shmctl(2) failed");
-        }
-    }
-
-    // Remove semaphore set, if needed
-    if (semid >= 0)
-    {
-        semctl(semid, 0, IPC_RMID);
-        if (errno)
-        {
-            perror("start outgoing clock: cleanup: unable to remove sem: semctl(2) failed");
         }
     }
 
@@ -234,7 +237,7 @@ static int clock_stop_in(clock_s* self)
     if (errno)
     {
         perror("stop incoming clock: unable to detach shm: shmdt(2) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     self->running = CLOCK_NOT_RUNNING;
@@ -244,7 +247,7 @@ static int clock_stop_in(clock_s* self)
 
     return 0;
 
-fail:
+fail_shm:
     return 1;
 }
 
@@ -267,7 +270,7 @@ static int clock_stop_out(clock_s* self)
     if (errno)
     {
         perror("stop outgoing clock: unable to detach shm: shmdt(2) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     // Remove shared memory segment
@@ -275,7 +278,7 @@ static int clock_stop_out(clock_s* self)
     if (errno)
     {
         perror("stop outgoing clock: unable to remove shm: shmctl(2) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     //
@@ -287,7 +290,7 @@ static int clock_stop_out(clock_s* self)
     if (errno)
     {
         perror("stop outgoing clock: unable to remove sem: semctl(2) failed");
-        goto fail;
+        goto fail_sem;
     }
 
     self->running = CLOCK_NOT_RUNNING;
@@ -297,7 +300,8 @@ static int clock_stop_out(clock_s* self)
 
     return 0;
 
-fail:
+fail_sem:
+fail_shm:
     return 1;
 }
 
