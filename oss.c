@@ -47,6 +47,13 @@ static void handle_exit()
     }
 }
 
+static void handle_sigint(int sig)
+{
+    // Just exit and let the exit handler clean up
+    fprintf(stderr, "execution interrupted\n");
+    exit(2);
+}
+
 static int launch_child()
 {
     int child_pid = fork();
@@ -95,8 +102,6 @@ static void print_usage(FILE* dest, const char* executable_name)
 
 int main(int argc, char* argv[])
 {
-    atexit(&handle_exit);
-
     // Other supplied parameters
     char* param_log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
     int param_max_slave_count = DEFAULT_MAX_SLAVE_COUNT;
@@ -154,7 +159,16 @@ int main(int argc, char* argv[])
     global.log_file = fopen(param_log_file_path, "a");
     if (!global.log_file)
     {
-        perror("unable to open log file");
+        perror("unable to open log file, logging will not occur");
+    }
+
+    // Register handlers for process exit and interrupt signal (^C at terminal)
+    atexit(&handle_exit);
+    struct sigaction sigaction_sigint = {};
+    sigaction_sigint.sa_handler = &handle_sigint;
+    if (sigaction(SIGINT, &sigaction_sigint, NULL))
+    {
+        perror("cannot handle SIGINT, manual IPC cleanup may be needed: sigaction(2) failed");
     }
 
     // Create and start outgoing clock
@@ -218,8 +232,11 @@ int main(int argc, char* argv[])
             clock_unlock(global.clock);
 
             // Print requested log information from assignment
-            fprintf(global.log_file, "termination notice from child at %ds %dns, sent at %ds %dns\n", msg.arg1,
-                    msg.arg2, seconds_recv, nanos_recv);
+            if (global.log_file)
+            {
+                fprintf(global.log_file, "termination notice from child at %ds %dns, sent at %ds %dns\n", msg.arg1,
+                        msg.arg2, seconds_recv, nanos_recv);
+            }
 
             // Fill in for that process with another child
             launch_child();
