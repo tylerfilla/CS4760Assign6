@@ -357,10 +357,10 @@ void clock_tick(clock_s* self)
     int nanos = self->__mem->nanos;
     int seconds = self->__mem->seconds;
 
-    // In this simulation, we increment by 8 nanoseconds per tick
+    // In this simulation, we increment by 250 nanoseconds per tick
     // Overflow into seconds once maximum fractional second is reached
 #define ONE_BILLION 1000000000
-    nanos += 8;
+    nanos += 250;
     if (nanos >= ONE_BILLION)
     {
         seconds += nanos / ONE_BILLION;
@@ -376,7 +376,7 @@ int clock_lock(clock_s* self)
 {
     errno = 0;
 
-    // Try to increment semaphore
+    // Try to decrement semaphore
     struct sembuf buf = { 0, -1, 0 };
     semop(self->semid, &buf, 1);
     if (errno)
@@ -394,9 +394,9 @@ int clock_unlock(clock_s* self)
 {
     errno = 0;
 
-    // Try to decrement semaphore
+    // Try to increment semaphore
     struct sembuf buf = { 0, 1, 0 };
-    semop(self->semid, &buf, 0);
+    semop(self->semid, &buf, 1);
     if (errno)
     {
         perror("clock unlock: unable to decrement sem: semop(2) failed");

@@ -331,7 +331,7 @@ int messenger_lock(messenger_s* self)
 {
     errno = 0;
 
-    // Try to increment semaphore
+    // Try to decrement semaphore
     struct sembuf buf = { 0, -1, 0 };
     semop(self->semid, &buf, 1);
     if (errno)
@@ -349,9 +349,9 @@ int messenger_unlock(messenger_s* self)
 {
     errno = 0;
 
-    // Try to decrement semaphore
+    // Try to increment semaphore
     struct sembuf buf = { 0, 1, 0 };
-    semop(self->semid, &buf, 0);
+    semop(self->semid, &buf, 1);
     if (errno)
     {
         perror("messenger unlock: unable to decrement sem: semop(2) failed");

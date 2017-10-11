@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <unistd.h>
 
@@ -16,6 +17,11 @@
 #define DEFAULT_LOG_FILE_PATH "oss.log"
 #define DEFAULT_MAX_SLAVE_COUNT 5
 #define DEFAULT_TIME_LIMIT 20
+
+/**
+ * Total number of living or dead child processes launched.
+ */
+static int total_num_processes = 0;
 
 static int launch_child()
 {
@@ -36,6 +42,7 @@ static int launch_child()
     else if (child_pid > 0)
     {
         // Fork succeeded, now in parent
+        total_num_processes++;
         return child_pid;
     }
     else
@@ -123,21 +130,40 @@ int main(int argc, char* argv[])
     // Create master messenger
     messenger_s* shm_msg = messenger_new(MESSENGER_SIDE_MASTER);
 
-    // FIXME
-    for (int i = 0; i < 5; ++i)
-    {
-        launch_child();
-    }
+    // Get starting wall clock time in seconds
+    time_t time_start = time(NULL);
 
     while (1)
     {
-        // Update clock
+        // Update the simulated clock
+        clock_lock(clock);
         clock_tick(clock);
+        int seconds = clock_get_seconds(clock);
+        clock_unlock(clock);
 
-        // If a message has arrived
-        if (messenger_test(shm_msg))
+        // Rules for natural termination, as specified in the assignment:
+        // 1. Two simulated seconds have passed
+        // 2. One hundred processes total have been spawned
+        // 3. Real time limit elapsed
+
+        // See rule 1 above
+        if (seconds >= 2)
         {
-            // FIXME: Messenger should use semaphores internally
+            fprintf(stderr, "rule 1\n");
+            break;
+        }
+
+        // See rule 2 above
+        if (total_num_processes >= 100)
+        {
+            fprintf(stderr, "rule 2\n");
+            break;
+        }
+
+        // See rule 3 above
+        if (time(NULL) - time_start > param_time_limit)
+        {
+            fprintf(stderr, "rule 3\n");
             break;
         }
     }
