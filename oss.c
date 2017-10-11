@@ -4,7 +4,6 @@
  * Assignment 3
  */
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +27,9 @@ static struct
     /** Total number of living or dead child processes launched. */
     int total_num_processes;
 
+    /** Total number of currently living processes. */
+    int current_num_processes;
+
     /** The outgoing clock instance. */
     clock_s* clock;
 
@@ -37,8 +39,15 @@ static struct
 
 static void handle_exit()
 {
-    clock_delete(global.clock);
-    messenger_delete(global.shm_msg);
+    // Clean up IPC components
+    if (global.clock)
+    {
+        clock_delete(global.clock);
+    }
+    if (global.shm_msg)
+    {
+        messenger_delete(global.shm_msg);
+    }
 
     // Close log file if it is open
     if (global.log_file)
@@ -49,8 +58,9 @@ static void handle_exit()
 
 static void handle_sigint(int sig)
 {
-    // Just exit and let the exit handler clean up
     fprintf(stderr, "execution interrupted\n");
+
+    // Let the normal exit handler take over
     exit(2);
 }
 
@@ -74,6 +84,7 @@ static int launch_child()
     {
         // Fork succeeded, now in parent
         global.total_num_processes++;
+        global.current_num_processes++;
         return child_pid;
     }
     else
@@ -90,7 +101,7 @@ static void print_help(FILE* dest, const char* executable_name)
     fprintf(dest, "Supported options:\n");
     fprintf(dest, "    -h          Display this information\n");
     fprintf(dest, "    -l <file>   Log events to <file> (default oss.log)\n");
-    fprintf(dest, "    -s <num>    Set <num> as maximum number of slave processes (default 5)\n");
+    fprintf(dest, "    -s <num>    Set <num> as max number of concurrent user processes (default 5)\n");
     fprintf(dest, "    -t <time>   Terminate after <time> seconds (default 20)\n");
 }
 
@@ -187,6 +198,10 @@ int main(int argc, char* argv[])
         launch_child();
     }
 
+    // Whether the loop is terminating
+    // While terminating, oss will still accept messages, but won't spawn children
+    int terminating = 0;
+
     while (1)
     {
         // Update the simulated clock
@@ -202,15 +217,21 @@ int main(int argc, char* argv[])
 
         // See rule 1
         if (seconds >= 2)
-            break;
+        {
+            terminating = 1;
+        }
 
         // See rule 2
         if (global.total_num_processes >= 100)
-            break;
+        {
+            terminating = 1;
+        }
 
         // See rule 3
         if (time(NULL) - time_start > param_time_limit)
-            break;
+        {
+            terminating = 1;
+        }
 
         // Enter critical section on shm_msg
         // This uses System V semaphores under the hood (see messenger.c)
@@ -224,6 +245,9 @@ int main(int argc, char* argv[])
 
             // Leave critical section on shm_msg
             messenger_unlock(global.shm_msg);
+
+            // Mark termination
+            global.current_num_processes--;
 
             // Get the time of receipt
             clock_lock(global.clock);
@@ -239,20 +263,23 @@ int main(int argc, char* argv[])
             }
 
             // Fill in for that process with another child
-            launch_child();
+            if (!terminating)
+            {
+                launch_child();
+            }
         }
         else
         {
             // Leave critical section on shm_msg
             messenger_unlock(global.shm_msg);
         }
-    }
 
-    // Wait for children to die of natural causes...
-    while (waitpid(WAIT_ANY, NULL, 0))
-    {
-        if (errno == ECHILD)
+        // Stop after all children have terminated
+        if (global.current_num_processes <= 0)
             break;
+
+        // Draws out the process for effect
+        usleep(1);
     }
 
     // Created with strdup(3)

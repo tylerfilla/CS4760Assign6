@@ -289,6 +289,9 @@ fail_shm:
 
 messenger_s* messenger_construct(messenger_s* self, int side)
 {
+    if (self == NULL)
+        return NULL;
+
     self->side = side;
     self->shmid = -1;
     self->semid = -1;
@@ -311,6 +314,9 @@ messenger_s* messenger_construct(messenger_s* self, int side)
 
 messenger_s* messenger_destruct(messenger_s* self)
 {
+    if (self == NULL)
+        return NULL;
+
     // Close the messenger
     switch (self->side)
     {

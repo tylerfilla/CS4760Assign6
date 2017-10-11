@@ -310,6 +310,9 @@ fail_shm:
 
 clock_s* clock_construct(clock_s* self, int mode)
 {
+    if (self == NULL)
+        return NULL;
+
     self->mode = mode;
     self->running = CLOCK_NOT_RUNNING;
     self->shmid = -1;
@@ -333,6 +336,9 @@ clock_s* clock_construct(clock_s* self, int mode)
 
 clock_s* clock_destruct(clock_s* self)
 {
+    if (self == NULL)
+        return NULL;
+
     // Stop clock if running
     if (self->running)
     {
@@ -359,14 +365,12 @@ void clock_tick(clock_s* self)
 
     // In this simulation, we increment by 250 nanoseconds per tick
     // Overflow into seconds once maximum fractional second is reached
-#define ONE_BILLION 1000000000
     nanos += 250;
-    if (nanos >= ONE_BILLION)
+    if (nanos >= 1000000000)
     {
-        seconds += nanos / ONE_BILLION;
-        nanos %= ONE_BILLION;
+        seconds += nanos / 1000000000;
+        nanos %= 1000000000;
     }
-#undef ONE_BILLION
 
     self->__mem->nanos = nanos;
     self->__mem->seconds = seconds;
