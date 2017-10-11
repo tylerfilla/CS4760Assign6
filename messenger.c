@@ -146,7 +146,6 @@ static int messenger_open_slave(messenger_s* self)
     // Shared Memory
     //
 
-    int shmid = -1;
     void* shm = (void*) -1;
 
     // Obtain IPC key for shared memory
@@ -158,7 +157,7 @@ static int messenger_open_slave(messenger_s* self)
     }
 
     // Get ID of the shared memory segment
-    shmid = shmget(shm_key, 0, 0);
+    int shmid = shmget(shm_key, 0, 0);
     if (errno)
     {
         perror("open slave messenger: unable to get shm: shmget(2) failed");
@@ -177,8 +176,6 @@ static int messenger_open_slave(messenger_s* self)
     // Semaphore
     //
 
-    int semid = -1;
-
     // Obtain IPC for semaphore set
     key_t sem_key = ftok(".", SEM_FTOK_CHAR);
     if (errno)
@@ -188,7 +185,7 @@ static int messenger_open_slave(messenger_s* self)
     }
 
     // Obtain existing semaphore set
-    semid = semget(sem_key, 0, 0);
+    int semid = semget(sem_key, 0, 0);
     if (errno)
     {
         perror("open slave messenger: unable to get sem: semget(2) failed");

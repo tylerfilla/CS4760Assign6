@@ -44,12 +44,14 @@ static int clock_start_in(clock_s* self)
     // Shared Memory
     //
 
+    void* shm = (void*) -1;
+
     // Obtain IPC key for shared memory
     key_t shm_key = ftok(".", SHM_FTOK_CHAR);
     if (errno)
     {
         perror("start incoming clock: unable to obtain shm key: ftok(3) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     // Obtain existing shared memory segment
@@ -57,15 +59,15 @@ static int clock_start_in(clock_s* self)
     if (errno)
     {
         perror("start incoming clock: unable to get shm: shmget(2) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     // Attach shared memory segment as read-only
-    void* shm = shmat(shmid, NULL, SHM_RDONLY);
+    shm = shmat(shmid, NULL, SHM_RDONLY);
     if (errno)
     {
         perror("start incoming clock: unable to attach shm: shmat(2) failed");
-        goto fail;
+        goto fail_shm;
     }
 
     //
@@ -77,7 +79,7 @@ static int clock_start_in(clock_s* self)
     if (errno)
     {
         perror("start incoming clock: unable to obtain sem key: ftok(3) failed");
-        goto fail;
+        goto fail_sem;
     }
 
     // Obtain existing semaphore set
@@ -85,7 +87,7 @@ static int clock_start_in(clock_s* self)
     if (errno)
     {
         perror("start incoming clock: unable to get sem: semget(3) failed");
-        goto fail;
+        goto fail_sem;
     }
 
     self->running = CLOCK_RUNNING;
@@ -95,7 +97,8 @@ static int clock_start_in(clock_s* self)
 
     return 0;
 
-fail:
+fail_sem:
+fail_shm:
     // Detach shared memory, if needed
     if (shm != NULL)
     {
