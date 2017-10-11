@@ -78,9 +78,13 @@ int main(int argc, char* argv[])
                 messenger_msg_s msg = { seconds_now, nanos_now };
                 messenger_offer(global.messenger, msg);
 
+                printf("unlocking\n");
+
                 // Unlock the messenger
                 if (messenger_unlock(global.messenger))
                     break;
+
+                printf("unlocked\n");
 
                 // Exit normally
                 exit(0);

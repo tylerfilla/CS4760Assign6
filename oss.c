@@ -4,12 +4,14 @@
  * Assignment 3
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include "clock.h"
 #include "messenger.h"
@@ -20,6 +22,9 @@
 
 static struct
 {
+    /** The open log file. */
+    FILE* log_file;
+
     /** Total number of living or dead child processes launched. */
     int total_num_processes;
 
@@ -34,6 +39,12 @@ static void handle_exit()
 {
     clock_delete(global.clock);
     messenger_delete(global.shm_msg);
+
+    // Close log file if it is open
+    if (global.log_file)
+    {
+        fclose(global.log_file);
+    }
 }
 
 static int launch_child()
@@ -139,6 +150,13 @@ int main(int argc, char* argv[])
         }
     }
 
+    // Open log file for appending
+    global.log_file = fopen(param_log_file_path, "a");
+    if (!global.log_file)
+    {
+        perror("unable to open log file");
+    }
+
     // Create and start outgoing clock
     global.clock = clock_new(CLOCK_MODE_OUT);
 
@@ -168,15 +186,15 @@ int main(int argc, char* argv[])
         // 2. One hundred processes total have been spawned
         // 3. Real time limit elapsed
 
-        // See rule 1 above
+        // See rule 1
         if (seconds >= 2)
-            fprintf(stderr, "rule 1\n");
+            break;
 
-        // See rule 2 above
+        // See rule 2
         if (global.total_num_processes >= 100)
-            fprintf(stderr, "rule 2\n");
+            break;
 
-        // See rule 3 above
+        // See rule 3
         if (time(NULL) - time_start > param_time_limit)
             break;
 
@@ -193,8 +211,18 @@ int main(int argc, char* argv[])
             // Leave critical section on shm_msg
             messenger_unlock(global.shm_msg);
 
-            // TODO: Handle the message
-            printf("got a message: %d %d\n", msg.arg1, msg.arg2);
+            // Get the time of receipt
+            clock_lock(global.clock);
+            int nanos_recv = clock_get_nanos(global.clock);
+            int seconds_recv = clock_get_seconds(global.clock);
+            clock_unlock(global.clock);
+
+            // Print requested log information from assignment
+            fprintf(global.log_file, "termination notice from child at %ds %dns, sent at %ds %dns\n", msg.arg1,
+                    msg.arg2, seconds_recv, nanos_recv);
+
+            // Fill in for that process with another child
+            launch_child();
         }
         else
         {
@@ -203,7 +231,14 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Not worth cleanup during abnormal termination
+    // Wait for children to die of natural causes...
+    while (waitpid(WAIT_ANY, NULL, 0))
+    {
+        if (errno == ECHILD)
+            break;
+    }
+
+    // Created with strdup(3)
     free(param_log_file_path);
 
     return 0;
