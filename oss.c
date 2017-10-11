@@ -133,6 +133,13 @@ int main(int argc, char* argv[])
     // Get starting wall clock time in seconds
     time_t time_start = time(NULL);
 
+    // Launch first set of children
+    // I understood the assignment to mean the -s option to specify the max # of children at a time (not total)
+    for (int i = 0; i < param_max_slave_count; ++i)
+    {
+        launch_child();
+    }
+
     while (1)
     {
         // Update the simulated clock
@@ -165,6 +172,28 @@ int main(int argc, char* argv[])
         {
             fprintf(stderr, "rule 3\n");
             break;
+        }
+
+        // Enter critical section on shm_msg
+        // This uses System V semaphores under the hood (see messenger.c)
+        messenger_lock(shm_msg);
+
+        // If a message is waiting
+        if (messenger_test(shm_msg))
+        {
+            // Get a copy of the message
+            messenger_msg_s msg = messenger_poll(shm_msg);
+
+            // Leave critical section on shm_msg
+            messenger_unlock(shm_msg);
+
+            // TODO: Handle the message
+            printf("got a message: %d %d\n", msg.arg1, msg.arg2);
+        }
+        else
+        {
+            // Leave critical section on shm_msg
+            messenger_unlock(shm_msg);
         }
     }
 
