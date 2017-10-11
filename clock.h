@@ -37,9 +37,6 @@ typedef struct
     /** Whether the clock is currently running. */
     int running;
 
-    /** Whether the clock is currently locked. */
-    int locked;
-
     /** The ID of the shared memory segment used. */
     int shmid;
 

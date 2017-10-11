@@ -336,11 +336,9 @@ int messenger_lock(messenger_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        perror("messenger lock: unable to increment sem: semop(2) failed");
+        perror("messenger lock: unable to decrement sem: semop(2) failed");
         return 1;
     }
-
-    self->locked = 1;
 
     return 0;
 }
@@ -354,11 +352,9 @@ int messenger_unlock(messenger_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        perror("messenger unlock: unable to decrement sem: semop(2) failed");
+        perror("messenger unlock: unable to increment sem: semop(2) failed");
         return 1;
     }
-
-    self->locked = 0;
 
     return 0;
 }

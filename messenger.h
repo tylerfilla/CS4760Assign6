@@ -33,9 +33,6 @@ typedef struct
     /** The local side of the messenger channel. */
     int side;
 
-    /** Whether the messenger is currently locked. */
-    int locked;
-
     /** The ID of the shared memory segment used. */
     int shmid;
 

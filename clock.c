@@ -381,11 +381,9 @@ int clock_lock(clock_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        perror("clock lock: unable to increment sem: semop(2) failed");
+        perror("clock lock: unable to decrement sem: semop(2) failed");
         return 1;
     }
-
-    self->locked = 1;
 
     return 0;
 }
@@ -399,11 +397,9 @@ int clock_unlock(clock_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        perror("clock unlock: unable to decrement sem: semop(2) failed");
+        perror("clock unlock: unable to increment sem: semop(2) failed");
         return 1;
     }
-
-    self->locked = 0;
 
     return 0;
 }

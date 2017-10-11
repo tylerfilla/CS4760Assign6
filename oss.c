@@ -18,10 +18,23 @@
 #define DEFAULT_MAX_SLAVE_COUNT 5
 #define DEFAULT_TIME_LIMIT 20
 
-/**
- * Total number of living or dead child processes launched.
- */
-static int total_num_processes = 0;
+static struct
+{
+    /** Total number of living or dead child processes launched. */
+    int total_num_processes;
+
+    /** The outgoing clock instance. */
+    clock_s* clock;
+
+    /** The master messenger instance. */
+    messenger_s* shm_msg;
+} global;
+
+static void handle_exit()
+{
+    clock_delete(global.clock);
+    messenger_delete(global.shm_msg);
+}
 
 static int launch_child()
 {
@@ -42,7 +55,7 @@ static int launch_child()
     else if (child_pid > 0)
     {
         // Fork succeeded, now in parent
-        total_num_processes++;
+        global.total_num_processes++;
         return child_pid;
     }
     else
@@ -71,6 +84,8 @@ static void print_usage(FILE* dest, const char* executable_name)
 
 int main(int argc, char* argv[])
 {
+    atexit(&handle_exit);
+
     // Other supplied parameters
     char* param_log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
     int param_max_slave_count = DEFAULT_MAX_SLAVE_COUNT;
@@ -125,10 +140,10 @@ int main(int argc, char* argv[])
     }
 
     // Create and start outgoing clock
-    clock_s* clock = clock_new(CLOCK_MODE_OUT);
+    global.clock = clock_new(CLOCK_MODE_OUT);
 
     // Create master messenger
-    messenger_s* shm_msg = messenger_new(MESSENGER_SIDE_MASTER);
+    global.shm_msg = messenger_new(MESSENGER_SIDE_MASTER);
 
     // Get starting wall clock time in seconds
     time_t time_start = time(NULL);
@@ -143,10 +158,10 @@ int main(int argc, char* argv[])
     while (1)
     {
         // Update the simulated clock
-        clock_lock(clock);
-        clock_tick(clock);
-        int seconds = clock_get_seconds(clock);
-        clock_unlock(clock);
+        clock_lock(global.clock);
+        clock_tick(global.clock);
+        int seconds = clock_get_seconds(global.clock);
+        clock_unlock(global.clock);
 
         // Rules for natural termination, as specified in the assignment:
         // 1. Two simulated seconds have passed
@@ -155,37 +170,28 @@ int main(int argc, char* argv[])
 
         // See rule 1 above
         if (seconds >= 2)
-        {
             fprintf(stderr, "rule 1\n");
-            break;
-        }
 
         // See rule 2 above
-        if (total_num_processes >= 100)
-        {
+        if (global.total_num_processes >= 100)
             fprintf(stderr, "rule 2\n");
-            break;
-        }
 
         // See rule 3 above
         if (time(NULL) - time_start > param_time_limit)
-        {
-            fprintf(stderr, "rule 3\n");
             break;
-        }
 
         // Enter critical section on shm_msg
         // This uses System V semaphores under the hood (see messenger.c)
-        messenger_lock(shm_msg);
+        messenger_lock(global.shm_msg);
 
         // If a message is waiting
-        if (messenger_test(shm_msg))
+        if (messenger_test(global.shm_msg))
         {
             // Get a copy of the message
-            messenger_msg_s msg = messenger_poll(shm_msg);
+            messenger_msg_s msg = messenger_poll(global.shm_msg);
 
             // Leave critical section on shm_msg
-            messenger_unlock(shm_msg);
+            messenger_unlock(global.shm_msg);
 
             // TODO: Handle the message
             printf("got a message: %d %d\n", msg.arg1, msg.arg2);
@@ -193,13 +199,11 @@ int main(int argc, char* argv[])
         else
         {
             // Leave critical section on shm_msg
-            messenger_unlock(shm_msg);
+            messenger_unlock(global.shm_msg);
         }
     }
 
-    // Clean stuff up
-    messenger_delete(shm_msg);
-    clock_delete(clock);
+    // Not worth cleanup during abnormal termination
     free(param_log_file_path);
 
     return 0;
