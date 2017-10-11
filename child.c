@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
     clock_unlock(clock);
 
     // Schedule a simulated time in the future to wait until
-    int nanos_target = nanos + (rand() % 1000000); // NOLINT
+    int nanos_target = nanos + (1 + rand() % 1000000); // NOLINT
     int seconds_target = seconds + (nanos_target / 1000000000);
     nanos_target %= 1000000000;
 
