@@ -2,14 +2,19 @@ Tyler Filla
 CS 4760
 Assignment 3
 
-This project uses two independent programs compiled from a combination of respective and shared source code. The
-assignment hints at possible expansion of this program in potentially a future assignment, so I made it a goal to make
-the code highly modular. The two programs both link with two libraries I call "clock" and "messenger."
+Preamble
+========
+
+This project uses two independent programs, oss and child. The former is user-facing, while the latter is only used
+internally. The assignment hints at possible expansion of this program in the future, so I made it a goal to keep the
+code highly modular. The two programs both link with two static libraries, which are detailed below.
 
 The clock library defines a clock object and the messenger library a messenger object. The clock object manages the
 simulated operating system's clock. The messenger object manages message-passing between oss and child processes. Both
-store their data in shared memory and protect against concurrent access using binary semaphores (both the System V type)
-through simple APIs.
+store their data in shared memory and protect against concurrent access using binary semaphores.
+
+To reiterate, I made the choice to use two semaphores, one for the clock and the other for shm_msg, the messenger. This
+is not explicitly disallowed by the assignment, but I feel this should be stated up front for clarity.
 
 Directory Structure
 ===================
