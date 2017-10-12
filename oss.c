@@ -281,6 +281,7 @@ int main(int argc, char* argv[])
             // Fill in for that process with another child
             if (terminating == 0)
             {
+                wait(NULL);
                 launch_child();
             }
         }
