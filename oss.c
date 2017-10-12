@@ -323,7 +323,6 @@ int main(int argc, char* argv[])
             break;
         }
 
-        // Draws out the process for effect
         usleep(1);
     }
 

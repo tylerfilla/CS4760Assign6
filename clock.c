@@ -363,9 +363,9 @@ void clock_tick(clock_s* self)
     int nanos = self->__mem->nanos;
     int seconds = self->__mem->seconds;
 
-    // In this simulation, we increment by 4 milliseconds per tick
+    // In this simulation, we increment by 8 milliseconds per tick
     // Overflow into seconds once maximum fractional second is reached
-    nanos += 4000000;
+    nanos += 8000000;
     if (nanos >= 1000000000)
     {
         seconds += nanos / 1000000000;

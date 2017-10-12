@@ -86,6 +86,8 @@ int main(int argc, char* argv[])
                 printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
                         seconds_now, nanos_now);
 
+                fflush(stdout);
+
                 // Unlock the messenger
                 if (messenger_unlock(global.messenger))
                     break;
@@ -93,6 +95,8 @@ int main(int argc, char* argv[])
                 // Exit normally
                 exit(0);
             }
+
+            fflush(stdout);
 
             // Unlock the messenger
             if (messenger_unlock(global.messenger))
