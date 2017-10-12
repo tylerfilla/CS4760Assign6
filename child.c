@@ -71,12 +71,20 @@ int main(int argc, char* argv[])
             if (messenger_lock(global.messenger))
                 break;
 
+            // Redirected to log file
+            printf("child %d entered critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
+                    seconds_now, nanos_now);
+
             // If there is no message waiting, we send our termination notice
             if (!messenger_test(global.messenger))
             {
                 // Send current time
                 messenger_msg_s msg = { seconds_now, nanos_now };
                 messenger_offer(global.messenger, msg);
+
+                // Redirected to log file
+                printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
+                        seconds_now, nanos_now);
 
                 // Unlock the messenger
                 if (messenger_unlock(global.messenger))
@@ -89,6 +97,10 @@ int main(int argc, char* argv[])
             // Unlock the messenger
             if (messenger_unlock(global.messenger))
                 break;
+
+            // Redirected to log file
+            printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
+                    seconds_now, nanos_now);
         }
 
         usleep(1);

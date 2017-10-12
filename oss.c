@@ -70,6 +70,10 @@ static int launch_child()
     if (child_pid == 0)
     {
         // Fork succeeded, now in child
+
+        // Redirect child stdout to log file
+        dup2(fileno(global.log_file), STDOUT_FILENO);
+
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
         {
@@ -205,10 +209,12 @@ int main(int argc, char* argv[])
     while (1)
     {
         // Update the simulated clock
-        clock_lock(global.clock);
+        if (clock_lock(global.clock))
+            break;
         clock_tick(global.clock);
         int seconds = clock_get_seconds(global.clock);
-        clock_unlock(global.clock);
+        if (clock_unlock(global.clock))
+            break;
 
         // Rules for natural termination, as specified in the assignment:
         // 1. Two simulated seconds have passed
@@ -224,18 +230,19 @@ int main(int argc, char* argv[])
         // See rule 2
         if (global.total_num_processes >= 100)
         {
-            terminating = 1;
+            terminating = 2;
         }
 
         // See rule 3
         if (time(NULL) - time_start > param_time_limit)
         {
-            terminating = 1;
+            terminating = 3;
         }
 
         // Enter critical section on shm_msg
         // This uses System V semaphores under the hood (see messenger.c)
-        messenger_lock(global.shm_msg);
+        if (messenger_lock(global.shm_msg))
+            break;
 
         // If a message is waiting
         if (messenger_test(global.shm_msg))
@@ -243,27 +250,36 @@ int main(int argc, char* argv[])
             // Get a copy of the message
             messenger_msg_s msg = messenger_poll(global.shm_msg);
 
-            // Leave critical section on shm_msg
-            messenger_unlock(global.shm_msg);
-
             // Mark termination
             global.current_num_processes--;
 
             // Get the time of receipt
-            clock_lock(global.clock);
+            if (clock_lock(global.clock))
+                break;
             int nanos_recv = clock_get_nanos(global.clock);
             int seconds_recv = clock_get_seconds(global.clock);
-            clock_unlock(global.clock);
+            if (clock_unlock(global.clock))
+                break;
 
             // Print requested log information from assignment
             if (global.log_file)
             {
-                fprintf(global.log_file, "termination notice from child at %ds %dns, sent at %ds %dns\n", msg.arg1,
+                fprintf(global.log_file, "termination notice from child at %ds %dns, received at %ds %dns\n", msg.arg1,
                         msg.arg2, seconds_recv, nanos_recv);
+
+                // NOTE: We're writing to a file "simultaneously" with two processes
+                // Writes are guarded by semaphores, but there's still buffering going on with the FILE*
+                // Sentences can still be interspersed, but in massive buffered blocks
+                // Flushing immediately after writing here fixes that
+                fflush(global.log_file);
             }
 
+            // Leave critical section on shm_msg
+            if (messenger_unlock(global.shm_msg))
+                break;
+
             // Fill in for that process with another child
-            if (!terminating)
+            if (terminating == 0)
             {
                 launch_child();
             }
@@ -271,12 +287,40 @@ int main(int argc, char* argv[])
         else
         {
             // Leave critical section on shm_msg
-            messenger_unlock(global.shm_msg);
+            if (messenger_unlock(global.shm_msg))
+                break;
         }
 
         // Stop after all children have terminated
         if (global.current_num_processes <= 0)
+        {
+            // Lock messenger to get access to log file
+            if (global.log_file && !messenger_lock(global.shm_msg))
+            {
+                // Log message about why termination happened
+                switch (terminating)
+                {
+                case 1:
+                    fprintf(global.log_file, "terminated: 2 simulated seconds passed\n");
+                    break;
+                case 2:
+                    fprintf(global.log_file, "terminated: 100 processes spawned in total\n");
+                    break;
+                case 3:
+                    fprintf(global.log_file, "terminated: real time limit of %ds elapsed\n", param_time_limit);
+                    break;
+                default:
+                    // ???
+                    break;
+                }
+                fflush(global.log_file);
+
+                // Unlock messenger after logging
+                messenger_unlock(global.shm_msg);
+            }
+
             break;
+        }
 
         // Draws out the process for effect
         usleep(1);
