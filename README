@@ -1,23 +1,11 @@
 Tyler Filla
 CS 4760
-Assignment 3
+Assignment 4
 
 Preamble
 ========
 
-This project uses two independent programs, oss and child. The former is user-facing, while the latter is only used
-internally. The assignment hints at possible expansion of this program in the future, so I made it a goal to keep the
-code highly modular. The two programs both link with two static libraries, which are detailed below.
-
-The clock library defines a clock object and the messenger library a messenger object. The clock object manages the
-simulated operating system's clock. The messenger object manages message-passing between oss and child processes. Both
-store their data in shared memory and protect against concurrent access using binary semaphores. In total, this means
-two semaphores are used, one for each shared resource.
-
-Also, I failed to read the very last sentence of the assignment when I designed the fundamentals of the project, which
-adds the requirement to log acquisition and release of semaphores from the child. I hacked together a solution by
-guarding the log file with shm_msg's semaphore and redirecting each child's stdout to it. This avoids the need to share
-the filename via command-line arguments and maintain multiple open copies.
+[ preamble for assignment 4 ]
 
 Directory Structure
 ===================
