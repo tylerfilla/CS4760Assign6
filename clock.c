@@ -1,13 +1,8 @@
 /*
  * Tyler Filla
  * CS 4760
- * Assignment 3
+ * Assignment 4
  */
-
-//
-// clock.c
-// This is the main file for the clock library.
-//
 
 #include <errno.h>
 #include <stdio.h>

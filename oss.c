@@ -1,7 +1,7 @@
 /*
  * Tyler Filla
  * CS 4760
- * Assignment 3
+ * Assignment 4
  */
 
 #include <stdio.h>
@@ -13,7 +13,7 @@
 #include <sys/wait.h>
 
 #include "clock.h"
-#include "messenger.h"
+#include "scheduler.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
 #define DEFAULT_MAX_SLAVE_COUNT 5
@@ -33,8 +33,8 @@ static struct
     /** The outgoing clock instance. */
     clock_s* clock;
 
-    /** The master messenger instance. */
-    messenger_s* shm_msg;
+    /** The master scheduler instance. */
+    scheduler_s* shm_msg;
 } global;
 
 static void handle_exit()
@@ -46,7 +46,7 @@ static void handle_exit()
     }
     if (global.shm_msg)
     {
-        messenger_delete(global.shm_msg);
+        scheduler_delete(global.shm_msg);
     }
 
     // Close log file if it is open
@@ -189,8 +189,8 @@ int main(int argc, char* argv[])
     // Create and start outgoing clock
     global.clock = clock_new(CLOCK_MODE_OUT);
 
-    // Create master messenger
-    global.shm_msg = messenger_new(MESSENGER_SIDE_MASTER);
+    // Create master scheduler
+    global.shm_msg = scheduler_new(SCHEDULER_SIDE_MASTER);
 
     // Get starting wall clock time in seconds
     time_t time_start = time(NULL);
@@ -240,15 +240,15 @@ int main(int argc, char* argv[])
         }
 
         // Enter critical section on shm_msg
-        // This uses System V semaphores under the hood (see messenger.c)
-        if (messenger_lock(global.shm_msg))
+        // This uses System V semaphores under the hood (see scheduler.c)
+        if (scheduler_lock(global.shm_msg))
             break;
 
         // If a message is waiting
-        if (messenger_test(global.shm_msg))
+        if (scheduler_test(global.shm_msg))
         {
             // Get a copy of the message
-            messenger_msg_s msg = messenger_poll(global.shm_msg);
+            scheduler_msg_s msg = scheduler_poll(global.shm_msg);
 
             // Mark termination
             global.current_num_processes--;
@@ -275,7 +275,7 @@ int main(int argc, char* argv[])
             }
 
             // Leave critical section on shm_msg
-            if (messenger_unlock(global.shm_msg))
+            if (scheduler_unlock(global.shm_msg))
                 break;
 
             // Fill in for that process with another child
@@ -288,15 +288,15 @@ int main(int argc, char* argv[])
         else
         {
             // Leave critical section on shm_msg
-            if (messenger_unlock(global.shm_msg))
+            if (scheduler_unlock(global.shm_msg))
                 break;
         }
 
         // Stop after all children have terminated
         if (global.current_num_processes <= 0)
         {
-            // Lock messenger to get access to log file
-            if (global.log_file && !messenger_lock(global.shm_msg))
+            // Lock scheduler to get access to log file
+            if (global.log_file && !scheduler_lock(global.shm_msg))
             {
                 // Log message about why termination happened
                 switch (terminating)
@@ -316,8 +316,8 @@ int main(int argc, char* argv[])
                 }
                 fflush(global.log_file);
 
-                // Unlock messenger after logging
-                messenger_unlock(global.shm_msg);
+                // Unlock scheduler after logging
+                scheduler_unlock(global.shm_msg);
             }
 
             break;

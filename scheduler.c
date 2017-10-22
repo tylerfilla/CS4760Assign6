@@ -1,7 +1,7 @@
 /*
  * Tyler Filla
  * CS 4760
- * Assignment 3
+ * Assignment 4
  */
 
 #include <errno.h>
@@ -12,24 +12,24 @@
 #include <sys/shm.h>
 #include <sys/sem.h>
 
-#include "messenger.h"
+#include "scheduler.h"
 
 #define SHM_FTOK_CHAR 'M'
 #define SEM_FTOK_CHAR 'N'
 
-struct __messenger_mem_s
+struct __scheduler_mem_s
 {
     /** Whether a message is waiting. */
     int waiting;
 
     /** The message data. */
-    messenger_msg_s msg;
+    scheduler_msg_s msg;
 };
 
 /**
- * Open a master side messenger.
+ * Open a master side scheduler.
  */
-static int messenger_open_master(messenger_s* self)
+static int scheduler_open_master(scheduler_s* self)
 {
     errno = 0;
 
@@ -44,15 +44,15 @@ static int messenger_open_master(messenger_s* self)
     key_t shm_key = ftok(".", SHM_FTOK_CHAR);
     if (errno)
     {
-        perror("open master messenger: unable to obtain shm key: ftok(3) failed");
+        perror("open master scheduler: unable to obtain shm key: ftok(3) failed");
         goto fail_shm;
     }
 
     // Create shared memory segment
-    shmid = shmget(shm_key, sizeof(__messenger_mem_s), IPC_CREAT | IPC_EXCL | 0600);
+    shmid = shmget(shm_key, sizeof(__scheduler_mem_s), IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
-        perror("open master messenger: unable to get shm: shmget(2) failed");
+        perror("open master scheduler: unable to get shm: shmget(2) failed");
         goto fail_shm;
     }
 
@@ -60,7 +60,7 @@ static int messenger_open_master(messenger_s* self)
     shm = shmat(shmid, NULL, 0);
     if (errno)
     {
-        perror("open master messenger: unable to attach shm: shmat(2) failed");
+        perror("open master scheduler: unable to attach shm: shmat(2) failed");
         goto fail_shm;
     }
 
@@ -74,7 +74,7 @@ static int messenger_open_master(messenger_s* self)
     key_t sem_key = ftok(".", SEM_FTOK_CHAR);
     if (errno)
     {
-        perror("open master messenger: unable to obtain sem key: ftok(3) failed");
+        perror("open master scheduler: unable to obtain sem key: ftok(3) failed");
         goto fail_sem;
     }
 
@@ -82,7 +82,7 @@ static int messenger_open_master(messenger_s* self)
     semid = semget(sem_key, 1, IPC_CREAT | IPC_EXCL | 0600);
     if (errno)
     {
-        perror("open master messenger: unable to get sem: semget(2) failed");
+        perror("open master scheduler: unable to get sem: semget(2) failed");
         goto fail_sem;
     }
 
@@ -90,7 +90,7 @@ static int messenger_open_master(messenger_s* self)
     semctl(semid, 0, SETVAL, 1);
     if (errno)
     {
-        perror("open master messenger: unable to set sem value: semctl(2) failed");
+        perror("open master scheduler: unable to set sem value: semctl(2) failed");
         goto fail_sem;
     }
 
@@ -107,7 +107,7 @@ fail_sem:
         semctl(semid, 0, IPC_RMID);
         if (errno)
         {
-            perror("open master messenger: cleanup: unable to remove sem: semctl(2) failed");
+            perror("open master scheduler: cleanup: unable to remove sem: semctl(2) failed");
         }
     }
 
@@ -118,7 +118,7 @@ fail_shm:
         shmdt(shm);
         if (errno)
         {
-            perror("open master messenger: cleanup: unable to detach shm: shmdt(2) failed");
+            perror("open master scheduler: cleanup: unable to detach shm: shmdt(2) failed");
         }
     }
 
@@ -128,7 +128,7 @@ fail_shm:
         shmctl(shmid, IPC_RMID, NULL);
         if (errno)
         {
-            perror("open master messenger: cleanup: unable to remove shm: shmctl(2) failed");
+            perror("open master scheduler: cleanup: unable to remove shm: shmctl(2) failed");
         }
     }
 
@@ -136,9 +136,9 @@ fail_shm:
 }
 
 /**
- * Open a slave side messenger.
+ * Open a slave side scheduler.
  */
-static int messenger_open_slave(messenger_s* self)
+static int scheduler_open_slave(scheduler_s* self)
 {
     errno = 0;
 
@@ -152,7 +152,7 @@ static int messenger_open_slave(messenger_s* self)
     key_t shm_key = ftok(".", SHM_FTOK_CHAR);
     if (errno)
     {
-        perror("open slave messenger: unable to obtain shm key: ftok(3) failed");
+        perror("open slave scheduler: unable to obtain shm key: ftok(3) failed");
         goto fail_shm;
     }
 
@@ -160,7 +160,7 @@ static int messenger_open_slave(messenger_s* self)
     int shmid = shmget(shm_key, 0, 0);
     if (errno)
     {
-        perror("open slave messenger: unable to get shm: shmget(2) failed");
+        perror("open slave scheduler: unable to get shm: shmget(2) failed");
         goto fail_shm;
     }
 
@@ -168,7 +168,7 @@ static int messenger_open_slave(messenger_s* self)
     shm = shmat(shmid, NULL, 0);
     if (errno)
     {
-        perror("open slave messenger: unable to attach shm: shmat(2) failed");
+        perror("open slave scheduler: unable to attach shm: shmat(2) failed");
         goto fail_shm;
     }
 
@@ -180,7 +180,7 @@ static int messenger_open_slave(messenger_s* self)
     key_t sem_key = ftok(".", SEM_FTOK_CHAR);
     if (errno)
     {
-        perror("open slave messenger: unable to obtain sem key: ftok(3) failed");
+        perror("open slave scheduler: unable to obtain sem key: ftok(3) failed");
         goto fail_sem;
     }
 
@@ -188,7 +188,7 @@ static int messenger_open_slave(messenger_s* self)
     int semid = semget(sem_key, 0, 0);
     if (errno)
     {
-        perror("open slave messenger: unable to get sem: semget(2) failed");
+        perror("open slave scheduler: unable to get sem: semget(2) failed");
         goto fail_sem;
     }
 
@@ -206,7 +206,7 @@ fail_shm:
         shmdt(shm);
         if (errno)
         {
-            perror("open slave messenger: cleanup: unable to detach shm: shmdt(2) failed");
+            perror("open slave scheduler: cleanup: unable to detach shm: shmdt(2) failed");
         }
     }
 
@@ -214,9 +214,9 @@ fail_shm:
 }
 
 /**
- * Close a master side messenger.
+ * Close a master side scheduler.
  */
-static int messenger_close_master(messenger_s* self)
+static int scheduler_close_master(scheduler_s* self)
 {
     errno = 0;
 
@@ -228,14 +228,14 @@ static int messenger_close_master(messenger_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perror("close master messenger: unable to detach shm: shmdt(2) failed");
+        perror("close master scheduler: unable to detach shm: shmdt(2) failed");
         goto fail_shm;
     }
 
     shmctl(self->shmid, IPC_RMID, NULL);
     if (errno)
     {
-        perror("close master messenger: unable to remove shm: shmctl(2) failed");
+        perror("close master scheduler: unable to remove shm: shmctl(2) failed");
         goto fail_shm;
     }
 
@@ -247,7 +247,7 @@ static int messenger_close_master(messenger_s* self)
     semctl(self->semid, 0, IPC_RMID);
     if (errno)
     {
-        perror("close master messenger: unable to remove sem: semctl(2) failed");
+        perror("close master scheduler: unable to remove sem: semctl(2) failed");
         goto fail_sem;
     }
 
@@ -263,9 +263,9 @@ fail_shm:
 }
 
 /**
- * Close a slave side messenger.
+ * Close a slave side scheduler.
  */
-static int messenger_close_slave(messenger_s* self)
+static int scheduler_close_slave(scheduler_s* self)
 {
     errno = 0;
 
@@ -273,7 +273,7 @@ static int messenger_close_slave(messenger_s* self)
     shmdt(self->__mem);
     if (errno)
     {
-        perror("close slave messenger: unable to detach shm: shmdt(2) failed");
+        perror("close slave scheduler: unable to detach shm: shmdt(2) failed");
         goto fail_shm;
     }
 
@@ -287,7 +287,7 @@ fail_shm:
     return 1;
 }
 
-messenger_s* messenger_construct(messenger_s* self, int side)
+scheduler_s* scheduler_construct(scheduler_s* self, int side)
 {
     if (self == NULL)
         return NULL;
@@ -296,14 +296,14 @@ messenger_s* messenger_construct(messenger_s* self, int side)
     self->shmid = -1;
     self->semid = -1;
 
-    // Open the messenger
+    // Open the scheduler
     switch (side)
     {
-    case MESSENGER_SIDE_MASTER:
-        messenger_open_master(self);
+    case SCHEDULER_SIDE_MASTER:
+        scheduler_open_master(self);
         break;
-    case MESSENGER_SIDE_SLAVE:
-        messenger_open_slave(self);
+    case SCHEDULER_SIDE_SLAVE:
+        scheduler_open_slave(self);
         break;
     default:
         break;
@@ -312,19 +312,19 @@ messenger_s* messenger_construct(messenger_s* self, int side)
     return self;
 }
 
-messenger_s* messenger_destruct(messenger_s* self)
+scheduler_s* scheduler_destruct(scheduler_s* self)
 {
     if (self == NULL)
         return NULL;
 
-    // Close the messenger
+    // Close the scheduler
     switch (self->side)
     {
-    case MESSENGER_SIDE_MASTER:
-        messenger_close_master(self);
+    case SCHEDULER_SIDE_MASTER:
+        scheduler_close_master(self);
         break;
-    case MESSENGER_SIDE_SLAVE:
-        messenger_close_slave(self);
+    case SCHEDULER_SIDE_SLAVE:
+        scheduler_close_slave(self);
         break;
     default:
         break;
@@ -333,7 +333,7 @@ messenger_s* messenger_destruct(messenger_s* self)
     return self;
 }
 
-int messenger_lock(messenger_s* self)
+int scheduler_lock(scheduler_s* self)
 {
     errno = 0;
 
@@ -342,14 +342,14 @@ int messenger_lock(messenger_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        perror("messenger lock: unable to decrement sem: semop(2) failed");
+        perror("scheduler lock: unable to decrement sem: semop(2) failed");
         return 1;
     }
 
     return 0;
 }
 
-int messenger_unlock(messenger_s* self)
+int scheduler_unlock(scheduler_s* self)
 {
     errno = 0;
 
@@ -358,27 +358,31 @@ int messenger_unlock(messenger_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        perror("messenger unlock: unable to increment sem: semop(2) failed");
+        perror("scheduler unlock: unable to increment sem: semop(2) failed");
         return 1;
     }
 
     return 0;
 }
 
-int messenger_test(messenger_s* self)
+/*
+
+int scheduler_test(scheduler_s* self)
 {
     return self->__mem->waiting;
 }
 
-messenger_msg_s messenger_poll(messenger_s* self)
+scheduler_msg_s scheduler_poll(scheduler_s* self)
 {
-    messenger_msg_s msg = self->__mem->msg;
+    scheduler_msg_s msg = self->__mem->msg;
     self->__mem->waiting = 0;
     return msg;
 }
 
-void messenger_offer(messenger_s* self, messenger_msg_s msg)
+void scheduler_offer(scheduler_s* self, scheduler_msg_s msg)
 {
     self->__mem->msg = msg;
     self->__mem->waiting = 1;
 }
+
+*/

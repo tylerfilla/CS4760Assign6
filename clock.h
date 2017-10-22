@@ -1,7 +1,7 @@
 /*
  * Tyler Filla
  * CS 4760
- * Assignment 3
+ * Assignment 4
  */
 
 #ifndef CLOCK_H

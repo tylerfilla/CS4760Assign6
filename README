@@ -20,9 +20,9 @@ Project Root
  |
  +-- Makefile
  |
- +-- messenger.c    (the main file for the messenger library)
+ +-- scheduler.c    (the main file for the scheduler library)
  |
- +-- messenger.h    (the corresponding header file for messenger.c)
+ +-- scheduler.h    (the corresponding header file for scheduler.c)
  |
  +-- oss.c          (the main file for the oss program)
  |

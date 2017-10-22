@@ -1,7 +1,7 @@
 /*
  * Tyler Filla
  * CS 4760
- * Assignment 3
+ * Assignment 4
  */
 
 #include <stdio.h>
@@ -11,21 +11,21 @@
 #include <unistd.h>
 
 #include "clock.h"
-#include "messenger.h"
+#include "scheduler.h"
 
 static struct
 {
     /** The incoming clock instance. */
     clock_s* clock;
 
-    /** The slave messenger instance. */
-    messenger_s* messenger;
+    /** The slave scheduler instance. */
+    scheduler_s* scheduler;
 } global;
 
 static void handle_exit()
 {
     clock_delete(global.clock);
-    messenger_delete(global.messenger);
+    scheduler_delete(global.scheduler);
 }
 
 int main(int argc, char* argv[])
@@ -36,8 +36,8 @@ int main(int argc, char* argv[])
     // Create and start incoming (read-only) clock
     global.clock = clock_new(CLOCK_MODE_IN);
 
-    // Create slave messenger
-    global.messenger = messenger_new(MESSENGER_SIDE_SLAVE);
+    // Create slave scheduler
+    global.scheduler = scheduler_new(SCHEDULER_SIDE_SLAVE);
 
     // Get the starting simulated time
     clock_lock(global.clock);
@@ -67,8 +67,8 @@ int main(int argc, char* argv[])
         // If delay has elapsed
         if (seconds_now > seconds_target || (seconds_now == seconds_target && nanos_now > nanos_target))
         {
-            // Lock the messenger
-            if (messenger_lock(global.messenger))
+            // Lock the scheduler
+            if (scheduler_lock(global.scheduler))
                 break;
 
             // Redirected to log file
@@ -76,11 +76,11 @@ int main(int argc, char* argv[])
                     seconds_now, nanos_now);
 
             // If there is no message waiting, we send our termination notice
-            if (!messenger_test(global.messenger))
+            if (!scheduler_test(global.scheduler))
             {
                 // Send current time
-                messenger_msg_s msg = { seconds_now, nanos_now };
-                messenger_offer(global.messenger, msg);
+                scheduler_msg_s msg = { seconds_now, nanos_now };
+                scheduler_offer(global.scheduler, msg);
 
                 // Redirected to log file
                 printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
@@ -88,8 +88,8 @@ int main(int argc, char* argv[])
 
                 fflush(stdout);
 
-                // Unlock the messenger
-                if (messenger_unlock(global.messenger))
+                // Unlock the scheduler
+                if (scheduler_unlock(global.scheduler))
                     break;
 
                 // Exit normally
@@ -102,8 +102,8 @@ int main(int argc, char* argv[])
             printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
                     seconds_now, nanos_now);
 
-            // Unlock the messenger
-            if (messenger_unlock(global.messenger))
+            // Unlock the scheduler
+            if (scheduler_unlock(global.scheduler))
                 break;
         }
 
