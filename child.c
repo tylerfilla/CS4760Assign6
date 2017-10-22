@@ -98,13 +98,13 @@ int main(int argc, char* argv[])
 
             fflush(stdout);
 
-            // Unlock the messenger
-            if (messenger_unlock(global.messenger))
-                break;
-
             // Redirected to log file
             printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
                     seconds_now, nanos_now);
+
+            // Unlock the messenger
+            if (messenger_unlock(global.messenger))
+                break;
         }
 
         usleep(1);
