@@ -4,31 +4,26 @@
  * Assignment 4
  */
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #include <unistd.h>
-#include <sys/wait.h>
 
 #include "clock.h"
 #include "scheduler.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
-#define DEFAULT_MAX_SLAVE_COUNT 5
-#define DEFAULT_TIME_LIMIT 20
 
 static struct
 {
+    /** The desired path to the log file. */
+    char* log_file_path;
+
     /** The open log file. */
     FILE* log_file;
-
-    /** Total number of living or dead child processes launched. */
-    int total_num_processes;
-
-    /** Total number of currently living processes. */
-    int current_num_processes;
 
     /** The outgoing clock instance. */
     clock_s* clock;
@@ -54,24 +49,33 @@ static void handle_exit()
     {
         fclose(global.log_file);
     }
+
+    // The program is exiting, but this is The Right Way (TM)
+    if (global.log_file_path)
+    {
+        free(global.log_file_path);
+    }
 }
 
 static void handle_sigint(int sig)
 {
     fprintf(stderr, "execution interrupted\n");
 
-    // Let the normal exit handler take over
+    // Exit the application with status 2
+    // The exit handler should take over just like normal
     exit(2);
 }
 
-static int launch_child()
+static pid_t launch_child()
 {
     int child_pid = fork();
     if (child_pid == 0)
     {
         // Fork succeeded, now in child
 
-        // Redirect child stdout to log file
+        // Redirect child stderr and stdout to log file
+        // This is a hack to allow logging from children without communicating the log fd
+        dup2(fileno(global.log_file), STDERR_FILENO);
         dup2(fileno(global.log_file), STDOUT_FILENO);
 
         // Swap in the child image
@@ -87,8 +91,6 @@ static int launch_child()
     else if (child_pid > 0)
     {
         // Fork succeeded, now in parent
-        global.total_num_processes++;
-        global.current_num_processes++;
         return child_pid;
     }
     else
@@ -115,15 +117,7 @@ static void print_usage(FILE* dest, const char* executable_name)
 
 int main(int argc, char* argv[])
 {
-    // Other supplied parameters
-    char* param_log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
-    int param_time_limit = DEFAULT_TIME_LIMIT;
-
-    if (!param_log_file_path)
-    {
-        perror("strdup(3) failed");
-        return 1;
-    }
+    global.log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
 
     // Handle command-line options
     int opt;
@@ -135,9 +129,13 @@ int main(int argc, char* argv[])
             print_help(stdout, argv[0]);
             return 0;
         case 'l':
-            // It's harmless to let this allocation leak on abnormal termination
-            free(param_log_file_path);
-            param_log_file_path = strdup(optarg);
+            free(global.log_file_path);
+            global.log_file_path = strdup(optarg);
+            if (!global.log_file_path)
+            {
+                perror("global.log_file_path not allocated: strdup(3) failed");
+                return 1;
+            }
             break;
         default:
             fprintf(stderr, "invalid option: -%c\n", opt);
@@ -146,8 +144,14 @@ int main(int argc, char* argv[])
         }
     }
 
+    if (!global.log_file_path)
+    {
+        printf("global.log_file_path not allocated\n");
+        return 1;
+    }
+
     // Open log file for appending
-    global.log_file = fopen(param_log_file_path, "w");
+    global.log_file = fopen(global.log_file_path, "w");
     if (!global.log_file)
     {
         perror("unable to open log file, so logging will not occur");
@@ -177,7 +181,7 @@ int main(int argc, char* argv[])
         if (clock_lock(global.clock))
             return 1;
 
-        // Generate a time between 1 and 1.000001 seconds
+        // Generate a time between 1 and 1.000001 seconds (1s + [0, 1000ns])
         // This duration of time passage will be simulated
         unsigned int dn = (unsigned int) (rand() % 1000); // NOLINT
         unsigned int ds = 1;
@@ -191,15 +195,46 @@ int main(int argc, char* argv[])
 
         // Unlock the clock
         if (clock_unlock(global.clock))
-            break;
+            return 1;
 
-        printf("%d:%d\n", now_seconds, now_nanos);
+        // Lock the scheduler
+        if (scheduler_lock(global.scheduler))
+            return 1;
+
+        // If resources are available for another process to be spawned
+        if (scheduler_m_available(global.scheduler))
+        {
+            // Launch a child
+            pid_t child_pid = launch_child();
+
+            // If doing so failed
+            if (child_pid == -1)
+            {
+                // Unlock the scheduler
+                if (scheduler_unlock(global.scheduler))
+                    return 1;
+
+                // Try again later after a short delay
+                usleep(100);
+                continue;
+            }
+
+            // Complete spawning the child process
+            // This allocates the process control block and whatnot
+            if (scheduler_m_complete_spawn(global.scheduler, child_pid))
+            {
+                // Unlock the scheduler and die
+                scheduler_unlock(global.scheduler);
+                return 1;
+            }
+        }
+
+        // Unlock the scheduler
+        if (scheduler_unlock(global.scheduler))
+            return 1;
 
         usleep(1);
     }
-
-    // Created with strdup(3)
-    free(param_log_file_path);
 
     return 0;
 }

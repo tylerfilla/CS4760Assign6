@@ -7,6 +7,10 @@ Preamble
 
 [ preamble for assignment 4 ]
 
+abbrev. "simulated user process" -> "SUP"
+
+Note: signalling completion to oss is done via semaphore on scheduler (a bit different than assignment example?)
+
 Directory Structure
 ===================
 

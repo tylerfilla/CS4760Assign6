@@ -17,6 +17,11 @@
  */
 #define SCHEDULER_SIDE_SLAVE 1
 
+/**
+ * The maximum number of concurrent simulated user processes (SUPs).
+ */
+#define MAX_USER_PROCS 18
+
 typedef struct __scheduler_mem_s __scheduler_mem_s;
 
 typedef struct
@@ -78,23 +83,55 @@ int scheduler_lock(scheduler_s* scheduler);
 int scheduler_unlock(scheduler_s* scheduler);
 
 /**
- * On a master-side scheduler instance, select and schedule the next process to execute.
+ * Determine if there are enough resources to spawn another SUp. Take care to keep the scheduler locked between a call
+ * to this function and a call to scheduler_master_complete_spawn.
  *
  * Master only.
  *
  * @param scheduler The scheduler instance
- * @return Zero on success, otherwise nonzero
+ * @return Nonzero if such is the case, otherwise zero
  */
-int scheduler_select_and_schedule(scheduler_s* scheduler);
+int scheduler_m_available(scheduler_s* scheduler);
 
 /**
- * On a slave-side scheduler instance, test if the calling process should execute.
+ * Complete the spawning of a new SUP. This allocates resources
+ *
+ * Master only.
+ *
+ * @param scheduler The scheduler instance
+ * @param pid The new process's pid
+ * @return Zero on success, otherwise nonzero
+ */
+int scheduler_m_complete_spawn(scheduler_s* scheduler, pid_t pid);
+
+/**
+ * On a master-side scheduler instance, select and schedule the next SUP to execute.
+ *
+ * Master only.
+ *
+ * @param scheduler The scheduler instance
+ * @return The pid of the scheduled process, otherwise -1
+ */
+pid_t scheduler_m_select_and_schedule(scheduler_s* scheduler);
+
+/**
+ * On a slave-side scheduler instance, get the currently scheduled and dispatched process's pid.
  *
  * Slave only.
  *
  * @param scheduler The scheduler instance
  * @return Nonzero if such is the case, otherwise zero
  */
-int scheduler_slave_ismyturn(scheduler_s* scheduler);
+pid_t scheduler_s_get_dispatch_proc(scheduler_s* scheduler);
+
+/**
+ * On a slave-side scheduler instance, get the currently scheduled and dispatched process's quantum.
+ *
+ * Slave only.
+ *
+ * @param scheduler The scheduler instance
+ * @return The scheduled time quantum in nanoseconds
+ */
+unsigned int scheduler_s_get_dispatch_quantum(scheduler_s* scheduler);
 
 #endif // #ifndef SCHEDULER_H

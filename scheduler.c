@@ -6,20 +6,105 @@
 
 #include <errno.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
+#include <unistd.h>
 
 #include "scheduler.h"
 
-#define SHM_FTOK_CHAR 'M'
-#define SEM_FTOK_CHAR 'N'
+#define SHM_FTOK_CHAR 'S'
+#define SEM_FTOK_CHAR 'T'
 
+/**
+ * Process control block for a SUP.
+ */
+typedef struct
+{
+    /** The process ID. */
+    pid_t pid;
+} __process_ctl_block_s;
+
+/**
+ * Internal memory for scheduler. Shared.
+ */
 struct __scheduler_mem_s
 {
+    //
+    // Process Control Block
+    //
+
+    /** All process control blocks for SUPs. */
+    __process_ctl_block_s procs[MAX_USER_PROCS];
+
+    /** Number of SUPs currently running. */
+    unsigned int num_procs;
+
+    //
+    // Queues
+    //
+
+    /** The first process queue. High priority. */
+    pid_t queue_0[MAX_USER_PROCS];
+
+    /** Number of SUPs in queue 0. */
+    unsigned int queue_0_len;
+
+    /** The rolling head of the first process queue. */
+    unsigned int queue_0_head;
+
+    /** The rolling tail of the first process queue. */
+    unsigned int queue_0_tail;
+
+    /** The second process queue. Medium priority. */
+    pid_t queue_1[MAX_USER_PROCS];
+
+    /** Number of SUPs in queue 1. */
+    unsigned int queue_1_len;
+
+    /** The rolling head of the second process queue. */
+    unsigned int queue_1_head;
+
+    /** The rolling tail of the second process queue. */
+    unsigned int queue_2_tail;
+
+    /** The third process queue. Low priority. */
+    pid_t queue_2[MAX_USER_PROCS];
+
+    /** Number of SUPs in queue 2. */
+    unsigned int queue_2_len;
+
+    /** The rolling head of the third process queue. */
+    unsigned int queue_3_head;
+
+    /** The rolling tail of the third process queue. */
+    unsigned int queue_3_tail;
+
+    //
+    // Dispatch
+    //
+
+    /** The PID of the currently scheduled process, otherwise -1. */
+    pid_t dispatch_proc;
+
+    /** The time quantum, in nanoseconds, of the currently scheduled process. Valid iff dispatch_proc != -1. */
+    unsigned int dispatch_quantum;
 };
+
+/**
+ * Dequeue a SUP's pid from the desired scheduler queue. This implements a circular buffer.
+ */
+#define dequeue_proc_pid(self, queue) ((pid_t) (self)->__mem->queue_##queue[((self)->__mem->queue_##queue##_head++) \
+            % MAX_USER_PROCS])
+
+/**
+ * Enqueue a SUP's pid to the desired scheduler queue. This implements a circular buffer.
+ */
+#define enqueue_proc_pid(self, pid, queue) ((self)->__mem->queue_##queue[(++(self)->__mem->queue_##queue##_tail) \
+            % MAX_USER_PROCS] = (pid_t) (pid))
+
+// TODO: Need to add things to add/remove process control blocks
 
 /**
  * Open a master side scheduler.
@@ -360,15 +445,50 @@ int scheduler_unlock(scheduler_s* self)
     return 0;
 }
 
-int scheduler_select_and_schedule(scheduler_s* scheduler)
+int scheduler_m_available(scheduler_s* self)
 {
+    // Only run on master side
+    if (self->side != SCHEDULER_SIDE_MASTER)
+        return 0;
+
+    return self->__mem->num_procs < MAX_USER_PROCS;
+}
+
+int scheduler_m_complete_spawn(scheduler_s* self, pid_t pid)
+{
+    // Only run on master side
+    if (self->side != SCHEDULER_SIDE_MASTER)
+        return 1;
+
+    // Start the process in queue 0
+    enqueue_proc_pid(self, pid, 0);
+
     return 0;
 }
 
-int scheduler_slave_ismyturn(scheduler_s* self)
+pid_t scheduler_m_select_and_schedule(scheduler_s* self)
 {
+    // Only run on master side
+    if (self->side != SCHEDULER_SIDE_MASTER)
+        return 1;
+
+    return 0;
+}
+
+pid_t scheduler_s_get_dispatch_proc(scheduler_s* self)
+{
+    // Only run on slave side
     if (self->side != SCHEDULER_SIDE_SLAVE)
         return 0;
 
-    return 0;
+    return self->__mem->dispatch_proc;
+}
+
+unsigned int scheduler_s_get_dispatch_quantum(scheduler_s* self)
+{
+    // Only run on slave side
+    if (self->side != SCHEDULER_SIDE_SLAVE)
+        return 0;
+
+    return self->__mem->dispatch_quantum;
 }

@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
         if (scheduler_lock(global.scheduler))
             return 1;
 
-        if (scheduler_slave_ismyturn(global.scheduler))
+        if (scheduler_s_get_dispatch_proc(global.scheduler) == getpid())
         {
             // Determine if the process should run to completion
             int completion = rand() % 2; // NOLINT

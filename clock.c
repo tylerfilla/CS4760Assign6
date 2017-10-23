@@ -16,6 +16,9 @@
 #define SHM_FTOK_CHAR 'C'
 #define SEM_FTOK_CHAR 'D'
 
+/**
+ * Internal memory for clock. Shared.
+ */
 struct __clock_mem_s
 {
     /** Nanosecond counter. */
