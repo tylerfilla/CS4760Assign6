@@ -17,15 +17,6 @@
  */
 #define SCHEDULER_SIDE_SLAVE 1
 
-typedef struct scheduler_msg_s
-{
-    /** An integer argument. */
-    int arg1;
-
-    /** An integer argument. */
-    int arg2;
-} scheduler_msg_s;
-
 typedef struct __scheduler_mem_s __scheduler_mem_s;
 
 typedef struct
@@ -46,7 +37,7 @@ typedef struct
 /**
  * Create a scheduler instance.
  */
-#define scheduler_new(side) scheduler_construct(malloc(sizeof(scheduler_s)), side)
+#define scheduler_new(side) scheduler_construct(malloc(sizeof(scheduler_s)), (side))
 
 /**
  * Destroy a scheduler instance.
@@ -86,32 +77,24 @@ int scheduler_lock(scheduler_s* scheduler);
  */
 int scheduler_unlock(scheduler_s* scheduler);
 
-/*
+/**
+ * On a master-side scheduler instance, select and schedule the next process to execute.
+ *
+ * Master only.
+ *
+ * @param scheduler The scheduler instance
+ * @return Zero on success, otherwise nonzero
+ */
+int scheduler_select_and_schedule(scheduler_s* scheduler);
 
 /**
- * Determine if a scheduler has a message waiting.
+ * On a slave-side scheduler instance, test if the calling process should execute.
+ *
+ * Slave only.
  *
  * @param scheduler The scheduler instance
  * @return Nonzero if such is the case, otherwise zero
- * /
-int scheduler_test(scheduler_s* scheduler);
-
-/**
- * Remove and return a waiting message from a scheduler.
- *
- * @param scheduler The scheduler instance
- * @return The message
- * /
-scheduler_msg_s scheduler_poll(scheduler_s* scheduler);
-
-/**
- * Set the waiting message on a scheduler.
- *
- * @param scheduler The scheduler instance
- * @param msg The message
- * /
-void scheduler_offer(scheduler_s* scheduler, scheduler_msg_s msg);
-
-*/
+ */
+int scheduler_slave_ismyturn(scheduler_s* scheduler);
 
 #endif // #ifndef SCHEDULER_H

@@ -34,7 +34,7 @@ static struct
     clock_s* clock;
 
     /** The master scheduler instance. */
-    scheduler_s* shm_msg;
+    scheduler_s* scheduler;
 } global;
 
 static void handle_exit()
@@ -44,9 +44,9 @@ static void handle_exit()
     {
         clock_delete(global.clock);
     }
-    if (global.shm_msg)
+    if (global.scheduler)
     {
-        scheduler_delete(global.shm_msg);
+        scheduler_delete(global.scheduler);
     }
 
     // Close log file if it is open
@@ -105,8 +105,6 @@ static void print_help(FILE* dest, const char* executable_name)
     fprintf(dest, "Supported options:\n");
     fprintf(dest, "    -h          Display this information\n");
     fprintf(dest, "    -l <file>   Log events to <file> (default oss.log)\n");
-    fprintf(dest, "    -s <num>    Set <num> as max number of concurrent user processes (default 5)\n");
-    fprintf(dest, "    -t <time>   Terminate after <time> seconds (default 20)\n");
 }
 
 static void print_usage(FILE* dest, const char* executable_name)
@@ -119,7 +117,6 @@ int main(int argc, char* argv[])
 {
     // Other supplied parameters
     char* param_log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
-    int param_max_slave_count = DEFAULT_MAX_SLAVE_COUNT;
     int param_time_limit = DEFAULT_TIME_LIMIT;
 
     if (!param_log_file_path)
@@ -130,7 +127,7 @@ int main(int argc, char* argv[])
 
     // Handle command-line options
     int opt;
-    while ((opt = getopt(argc, argv, "hl:s:t:")) != -1)
+    while ((opt = getopt(argc, argv, "hl:")) != -1)
     {
         switch (opt)
         {
@@ -138,31 +135,10 @@ int main(int argc, char* argv[])
             print_help(stdout, argv[0]);
             return 0;
         case 'l':
+            // It's harmless to let this allocation leak on abnormal termination
             free(param_log_file_path);
             param_log_file_path = strdup(optarg);
             break;
-        case 's':
-        {
-            char* end = NULL;
-            param_max_slave_count = (int) strtoul(optarg, &end, 10);
-            if (*end)
-            {
-                fprintf(stderr, "invalid max slave count: %s\n", optarg);
-                return 1;
-            }
-            break;
-        }
-        case 't':
-        {
-            char* end = NULL;
-            param_time_limit = (int) strtoul(optarg, &end, 10);
-            if (*end)
-            {
-                fprintf(stderr, "invalid time limit: %s\n", optarg);
-                return 1;
-            }
-            break;
-        }
         default:
             fprintf(stderr, "invalid option: -%c\n", opt);
             print_usage(stderr, argv[0]);
@@ -171,10 +147,10 @@ int main(int argc, char* argv[])
     }
 
     // Open log file for appending
-    global.log_file = fopen(param_log_file_path, "a");
+    global.log_file = fopen(param_log_file_path, "w");
     if (!global.log_file)
     {
-        perror("unable to open log file, logging will not occur");
+        perror("unable to open log file, so logging will not occur");
     }
 
     // Register handlers for process exit and interrupt signal (^C at terminal)
@@ -190,32 +166,45 @@ int main(int argc, char* argv[])
     global.clock = clock_new(CLOCK_MODE_OUT);
 
     // Create master scheduler
-    global.shm_msg = scheduler_new(SCHEDULER_SIDE_MASTER);
+    global.scheduler = scheduler_new(SCHEDULER_SIDE_MASTER);
 
-    // Get starting wall clock time in seconds
-    time_t time_start = time(NULL);
-
-    // Launch first set of children
-    // I understood the assignment to mean the -s option to specify the max # of children at a time (not total)
-    for (int i = 0; i < param_max_slave_count; ++i)
-    {
-        launch_child();
-    }
-
-    // Whether the loop is terminating
-    // While terminating, oss will still accept messages, but won't spawn children
-    int terminating = 0;
+    // Seed the RNG
+    srand((unsigned int) time(NULL));
 
     while (1)
     {
-        // Update the simulated clock
+        // Lock the clock
         if (clock_lock(global.clock))
-            break;
-        clock_tick(global.clock);
-        int seconds = clock_get_seconds(global.clock);
+            return 1;
+
+        // Generate a time between 1 and 1.000001 seconds
+        // This duration of time passage will be simulated
+        unsigned int dn = (unsigned int) (rand() % 1000); // NOLINT
+        unsigned int ds = 1;
+
+        // Advance the clock
+        clock_advance(global.clock, dn, ds);
+
+        // Get latest time from clock
+        unsigned int now_nanos = clock_get_nanos(global.clock);
+        unsigned int now_seconds = clock_get_seconds(global.clock);
+
+        // Unlock the clock
         if (clock_unlock(global.clock))
             break;
 
+        printf("%d:%d\n", now_seconds, now_nanos);
+
+        usleep(1);
+    }
+
+    // Created with strdup(3)
+    free(param_log_file_path);
+
+    return 0;
+}
+
+/*
         // Rules for natural termination, as specified in the assignment:
         // 1. Two simulated seconds have passed
         // 2. One hundred processes total have been spawned
@@ -322,12 +311,4 @@ int main(int argc, char* argv[])
 
             break;
         }
-
-        usleep(1);
-    }
-
-    // Created with strdup(3)
-    free(param_log_file_path);
-
-    return 0;
-}
+ */

@@ -19,10 +19,10 @@
 struct __clock_mem_s
 {
     /** Nanosecond counter. */
-    int nanos;
+    unsigned int nanos;
 
     /** Second counter. */
-    int seconds;
+    unsigned int seconds;
 };
 
 /**
@@ -353,20 +353,24 @@ clock_s* clock_destruct(clock_s* self)
     return self;
 }
 
-void clock_tick(clock_s* self)
+void clock_advance(clock_s* self, unsigned int dn, unsigned int ds)
 {
-    int nanos = self->__mem->nanos;
-    int seconds = self->__mem->seconds;
+    // Current time
+    unsigned int nanos = self->__mem->nanos;
+    unsigned int seconds = self->__mem->seconds;
 
-    // In this simulation, we increment by 8 milliseconds per tick
-    // Overflow into seconds once maximum fractional second is reached
-    nanos += 8000000;
+    // Advance time
+    nanos += dn;
+    seconds += ds;
+
+    // Wrap nanoseconds
     if (nanos >= 1000000000)
     {
         seconds += nanos / 1000000000;
         nanos %= 1000000000;
     }
 
+    // Update time
     self->__mem->nanos = nanos;
     self->__mem->seconds = seconds;
 }
@@ -403,12 +407,12 @@ int clock_unlock(clock_s* self)
     return 0;
 }
 
-int clock_get_nanos(clock_s* self)
+unsigned int clock_get_nanos(clock_s* self)
 {
     return self->__mem->nanos;
 }
 
-int clock_get_seconds(clock_s* self)
+unsigned int clock_get_seconds(clock_s* self)
 {
     return self->__mem->seconds;
 }

@@ -19,11 +19,6 @@
 
 struct __scheduler_mem_s
 {
-    /** Whether a message is waiting. */
-    int waiting;
-
-    /** The message data. */
-    scheduler_msg_s msg;
 };
 
 /**
@@ -365,24 +360,15 @@ int scheduler_unlock(scheduler_s* self)
     return 0;
 }
 
-/*
-
-int scheduler_test(scheduler_s* self)
+int scheduler_select_and_schedule(scheduler_s* scheduler)
 {
-    return self->__mem->waiting;
+    return 0;
 }
 
-scheduler_msg_s scheduler_poll(scheduler_s* self)
+int scheduler_slave_ismyturn(scheduler_s* self)
 {
-    scheduler_msg_s msg = self->__mem->msg;
-    self->__mem->waiting = 0;
-    return msg;
-}
+    if (self->side != SCHEDULER_SIDE_SLAVE)
+        return 0;
 
-void scheduler_offer(scheduler_s* self, scheduler_msg_s msg)
-{
-    self->__mem->msg = msg;
-    self->__mem->waiting = 1;
+    return 0;
 }
-
-*/

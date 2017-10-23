@@ -37,28 +37,43 @@ int main(int argc, char* argv[])
     global.clock = clock_new(CLOCK_MODE_IN);
 
     // Create slave scheduler
+    // This connects to the existing master scheduler
     global.scheduler = scheduler_new(SCHEDULER_SIDE_SLAVE);
-
-    // Get the starting simulated time
-    clock_lock(global.clock);
-    int nanos_start = clock_get_nanos(global.clock);
-    int seconds_start = clock_get_seconds(global.clock);
-    clock_unlock(global.clock);
-
-    // Schedule a simulated time in the future until which to wait
-    int nanos_target = nanos_start + (1 + rand() % 1000000); // NOLINT
-    int seconds_target = seconds_start + (nanos_target / 1000000000);
-    nanos_target %= 1000000000;
 
     while (1)
     {
+        // Lock the scheduler
+        if (scheduler_lock(global.scheduler))
+            return 1;
+
+        if (scheduler_slave_ismyturn(global.scheduler))
+        {
+            // Determine if the process should run to completion
+            int completion = rand() % 2; // NOLINT
+
+            if (completion)
+            {
+            }
+        }
+
+        // Unlock the scheduler
+        if (scheduler_unlock(global.scheduler))
+            return 1;
+
+        usleep(1);
+    }
+
+    return 0;
+}
+
+/*
         // Lock the simulated clock
         if (clock_lock(global.clock))
             break;
 
         // Get current simulated time
-        int nanos_now = clock_get_nanos(global.clock);
-        int seconds_now = clock_get_seconds(global.clock);
+        int now_nanos = clock_get_nanos(global.clock);
+        int now_seconds = clock_get_seconds(global.clock);
 
         // Unlock the simulated clock
         if (clock_unlock(global.clock))
@@ -106,9 +121,4 @@ int main(int argc, char* argv[])
             if (scheduler_unlock(global.scheduler))
                 break;
         }
-
-        usleep(1);
-    }
-
-    return 0;
-}
+ */

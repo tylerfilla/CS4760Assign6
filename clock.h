@@ -50,7 +50,7 @@ typedef struct
 /**
  * Create a clock instance.
  */
-#define clock_new(mode) clock_construct(malloc(sizeof(clock_s)), mode)
+#define clock_new(mode) clock_construct(malloc(sizeof(clock_s)), (mode))
 
 /**
  * Destroy a clock instance.
@@ -75,11 +75,13 @@ clock_s* clock_construct(clock_s* clock, int mode);
 clock_s* clock_destruct(clock_s* clock);
 
 /**
- * Tick a clock instance.
+ * Advance a clock instance by the given time difference.
  *
  * @param clock The clock instance
+ * @param dn Additional nanoseconds
+ * @param ds Additional seconds
  */
-void clock_tick(clock_s* clock);
+void clock_advance(clock_s* clock, unsigned int dn, unsigned int ds);
 
 /**
  * Lock a clock for exclusive access. This blocks if already locked.
@@ -103,7 +105,7 @@ int clock_unlock(clock_s* clock);
  * @param clock The clock instance
  * @return Its nanosecond count or -1 on failure
  */
-int clock_get_nanos(clock_s* clock);
+unsigned int clock_get_nanos(clock_s* clock);
 
 /**
  * Retrieve the current number of seconds elapsed since a clock started.
@@ -111,6 +113,6 @@ int clock_get_nanos(clock_s* clock);
  * @param clock The clock instance
  * @return Its second count or -1 on failure
  */
-int clock_get_seconds(clock_s* clock);
+unsigned int clock_get_seconds(clock_s* clock);
 
 #endif // #ifndef CLOCK_H
