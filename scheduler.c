@@ -6,16 +6,18 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
-#include <unistd.h>
 
 #include "scheduler.h"
 
 #define SHM_FTOK_CHAR 'S'
 #define SEM_FTOK_CHAR 'T'
+
+#define BASE_TIME_QUANTUM_NANOS 10000000
 
 /**
  * Process control block for a SUP.
@@ -32,7 +34,7 @@ typedef struct
 struct __scheduler_mem_s
 {
     //
-    // Process Control Block
+    // Process Control Blocks
     //
 
     /** All process control blocks for SUPs. */
@@ -67,7 +69,7 @@ struct __scheduler_mem_s
     unsigned int queue_1_head;
 
     /** The rolling tail of the second process queue. */
-    unsigned int queue_2_tail;
+    unsigned int queue_1_tail;
 
     /** The third process queue. Low priority. */
     pid_t queue_2[MAX_USER_PROCS];
@@ -76,10 +78,10 @@ struct __scheduler_mem_s
     unsigned int queue_2_len;
 
     /** The rolling head of the third process queue. */
-    unsigned int queue_3_head;
+    unsigned int queue_2_head;
 
     /** The rolling tail of the third process queue. */
-    unsigned int queue_3_tail;
+    unsigned int queue_2_tail;
 
     //
     // Dispatch
@@ -95,16 +97,51 @@ struct __scheduler_mem_s
 /**
  * Dequeue a SUP's pid from the desired scheduler queue. This implements a circular buffer.
  */
-#define dequeue_proc_pid(self, queue) ((pid_t) (self)->__mem->queue_##queue[((self)->__mem->queue_##queue##_head++) \
-            % MAX_USER_PROCS])
+#define scheduler_dequeue_proc_pid(self, queue) \
+            ((pid_t) (self)->__mem->queue_##queue[((self)->__mem->queue_##queue##_head++) % MAX_USER_PROCS])
 
 /**
  * Enqueue a SUP's pid to the desired scheduler queue. This implements a circular buffer.
  */
-#define enqueue_proc_pid(self, pid, queue) ((self)->__mem->queue_##queue[(++(self)->__mem->queue_##queue##_tail) \
-            % MAX_USER_PROCS] = (pid_t) (pid))
+#define scheduler_enqueue_proc_pid(self, pid, queue) \
+            ((self)->__mem->queue_##queue[(++(self)->__mem->queue_##queue##_tail) % MAX_USER_PROCS] = (pid_t) (pid))
 
-// TODO: Need to add things to add/remove process control blocks
+/**
+ * Allocate a process control block for a newly spawned SUP with the given pid.
+ */
+static void scheduler_allocate_pcb(scheduler_s* self, pid_t pid)
+{
+    // Find index of first unallocated block
+    int block;
+    for (block = 0; block < MAX_USER_PROCS; ++block)
+    {
+        if (self->__mem->procs[block].pid == -1)
+            break;
+    }
+
+    if (block == MAX_USER_PROCS)
+    {
+        return;
+    }
+
+    self->__mem->procs[block].pid = pid;
+    self->__mem->num_procs++;
+}
+
+/**
+ * Clear all SUP process control blocks.
+ */
+static void scheduler_clear_pcbs(scheduler_s* self)
+{
+    // Zero out all memory for all blocks
+    memset(self->__mem->procs, 0, MAX_USER_PROCS * sizeof(__process_ctl_block_s));
+
+    // Add pids of -1 to indicate cleared blocks
+    for (int i = 0; i < MAX_USER_PROCS; ++i)
+    {
+        self->__mem->procs[i].pid = -1;
+    }
+}
 
 /**
  * Open a master side scheduler.
@@ -380,10 +417,13 @@ scheduler_s* scheduler_construct(scheduler_s* self, int side)
     switch (side)
     {
     case SCHEDULER_SIDE_MASTER:
-        scheduler_open_master(self);
+        if (scheduler_open_master(self))
+            return NULL;
+        scheduler_clear_pcbs(self);
         break;
     case SCHEDULER_SIDE_SLAVE:
-        scheduler_open_slave(self);
+        if (scheduler_open_slave(self))
+            return NULL;
         break;
     default:
         break;
@@ -401,10 +441,12 @@ scheduler_s* scheduler_destruct(scheduler_s* self)
     switch (self->side)
     {
     case SCHEDULER_SIDE_MASTER:
-        scheduler_close_master(self);
+        if (scheduler_close_master(self))
+            return NULL;
         break;
     case SCHEDULER_SIDE_SLAVE:
-        scheduler_close_slave(self);
+        if (scheduler_close_slave(self))
+            return NULL;
         break;
     default:
         break;
@@ -460,8 +502,11 @@ int scheduler_m_complete_spawn(scheduler_s* self, pid_t pid)
     if (self->side != SCHEDULER_SIDE_MASTER)
         return 1;
 
+    // Create process control block
+    scheduler_allocate_pcb(self, pid);
+
     // Start the process in queue 0
-    enqueue_proc_pid(self, pid, 0);
+    scheduler_enqueue_proc_pid(self, pid, 0);
 
     return 0;
 }

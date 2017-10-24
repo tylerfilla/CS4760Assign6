@@ -214,8 +214,7 @@ int main(int argc, char* argv[])
                 if (scheduler_unlock(global.scheduler))
                     return 1;
 
-                // Try again later after a short delay
-                usleep(100);
+                // Try again later
                 continue;
             }
 
