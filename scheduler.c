@@ -17,6 +17,19 @@
 #define SHM_FTOK_CHAR 'S'
 #define SEM_FTOK_CHAR 'T'
 
+/**
+ * The constant coefficient alpha.
+ */
+#define MULTI_LEVEL_ALPHA 1
+
+/**
+ * The constant coefficient beta.
+ */
+#define MULTI_LEVEL_BETA 1
+
+/**
+ * The base time quantum before priority is taken into account.
+ */
 #define BASE_TIME_QUANTUM_NANOS 10000000
 
 /**
@@ -26,6 +39,12 @@ typedef struct
 {
     /** The process ID. */
     pid_t pid;
+
+    /** The total CPU time this process has accumulated. */
+    unsigned int total_cpu_time;
+
+    /** The total wait time this process has accumulated. */
+    unsigned int total_wait_time;
 } __process_ctl_block_s;
 
 /**
@@ -107,9 +126,9 @@ struct __scheduler_mem_s
             ((self)->__mem->queue_##queue[(++(self)->__mem->queue_##queue##_tail) % MAX_USER_PROCS] = (pid_t) (pid))
 
 /**
- * Allocate a process control block for a newly spawned SUP with the given pid.
+ * Create a process control block for a newly spawned SUP with the given pid.
  */
-static void scheduler_allocate_pcb(scheduler_s* self, pid_t pid)
+static void scheduler_create_pcb(scheduler_s* self, pid_t pid)
 {
     // Find index of first unallocated block
     int block;
@@ -120,12 +139,30 @@ static void scheduler_allocate_pcb(scheduler_s* self, pid_t pid)
     }
 
     if (block == MAX_USER_PROCS)
-    {
         return;
+
+    memset(&self->__mem->procs[block], 0, sizeof(__process_ctl_block_s));
+    self->__mem->procs[block].pid = pid;
+}
+
+/**
+ * Destroy a process control block for a running SUP with the given pid.
+ */
+static void scheduler_destroy_pcb(scheduler_s* self, pid_t pid)
+{
+    // Find index of corresponding block
+    int block;
+    for (block = 0; block < MAX_USER_PROCS; ++block)
+    {
+        if (self->__mem->procs[block].pid == pid)
+            break;
     }
 
-    self->__mem->procs[block].pid = pid;
-    self->__mem->num_procs++;
+    if (block == MAX_USER_PROCS)
+        return;
+
+    // Mark block as unused
+    self->__mem->procs[block].pid = -1;
 }
 
 /**
@@ -503,10 +540,26 @@ int scheduler_m_complete_spawn(scheduler_s* self, pid_t pid)
         return 1;
 
     // Create process control block
-    scheduler_allocate_pcb(self, pid);
+    scheduler_create_pcb(self, pid);
 
     // Start the process in queue 0
     scheduler_enqueue_proc_pid(self, pid, 0);
+
+    self->__mem->num_procs++;
+
+    return 0;
+}
+
+int scheduler_m_complete_death(scheduler_s* self, pid_t pid)
+{
+    // Only run on master side
+    if (self->side != SCHEDULER_SIDE_MASTER)
+        return 1;
+
+    // TODO: Add process's stats to global stats for final readout
+
+    // Destroy process control block
+    scheduler_destroy_pcb(self, pid);
 
     return 0;
 }
@@ -520,20 +573,12 @@ pid_t scheduler_m_select_and_schedule(scheduler_s* self)
     return 0;
 }
 
-pid_t scheduler_s_get_dispatch_proc(scheduler_s* self)
+pid_t scheduler_get_dispatch_proc(scheduler_s* self)
 {
-    // Only run on slave side
-    if (self->side != SCHEDULER_SIDE_SLAVE)
-        return 0;
-
     return self->__mem->dispatch_proc;
 }
 
-unsigned int scheduler_s_get_dispatch_quantum(scheduler_s* self)
+unsigned int scheduler_get_dispatch_quantum(scheduler_s* self)
 {
-    // Only run on slave side
-    if (self->side != SCHEDULER_SIDE_SLAVE)
-        return 0;
-
     return self->__mem->dispatch_quantum;
 }

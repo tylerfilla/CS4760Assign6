@@ -13,6 +13,10 @@ Note: signalling completion to oss is done via semaphore on scheduler (a bit dif
 
 Note: Not using a bit vector to track occupied process control blocks. Using the pid field itself instead.
 
+Note: The "every time a process is scheduled" bit is handled in the child process, not in oss
+There is a contradiction in the assignment! Namely, the two bits that say to generate random numbers.
+I'm going with the one under OSS, as it is more strict and more detailed.
+
 Directory Structure
 ===================
 

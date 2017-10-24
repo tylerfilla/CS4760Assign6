@@ -46,15 +46,79 @@ int main(int argc, char* argv[])
         if (scheduler_lock(global.scheduler))
             return 1;
 
-        if (scheduler_s_get_dispatch_proc(global.scheduler) == getpid())
+        // If this SUP is dispatched
+        if (scheduler_get_dispatch_proc(global.scheduler) == getpid())
         {
-            // Determine if the process should run to completion
-            int completion = rand() % 2; // NOLINT
+            //
+            // Beginning Time
+            //
 
-            if (completion)
+            // Lock the clock
+            if (clock_lock(global.clock))
+                return 1;
+
+            // Get latest time from clock
+            unsigned int start_nanos = clock_get_nanos(global.clock);
+            unsigned int start_seconds = clock_get_seconds(global.clock);
+
+            // Unlock the clock
+            if (clock_unlock(global.clock))
+                return 1;
+
+            printf("user proc %d: resume (sim time %ds, %dns)\n", getpid(), start_seconds, start_nanos);
+
+            //
+            // Event Simulation
+            //
+            // Randomly choose one of the following:
+            //  a. Terminate immediately
+            //  b. Terminate after time quantum
+            //  c. Block on a simulated I/O event
+            //  d. Run for some time and yield
+            //
+
+            // Stopped here
+            // NOTE: Need to keep track of average waiting time for each queue
+
+            switch (rand() % 4)
             {
+            case 0:
+                // Terminate immediately
+                scheduler_unlock(global.scheduler);
+                return 0;
+            case 1:
+                // Terminate after time quantum
+                break;
+            case 2:
+                // Block on a simulated I/O event
+                break;
+            case 3:
+                // Run for some time and yield
+                break;
+            default:
+                break;
             }
+
+            //
+            // Ending Time
+            //
+
+            // Lock the clock
+            if (clock_lock(global.clock))
+                return 1;
+
+            // Get latest time from clock
+            unsigned int stop_nanos = clock_get_nanos(global.clock);
+            unsigned int stop_seconds = clock_get_seconds(global.clock);
+
+            // Unlock the clock
+            if (clock_unlock(global.clock))
+                return 1;
+
+            printf("user proc %d: yield (sim time %ds, %dns)\n", getpid(), stop_seconds, stop_nanos);
         }
+
+        fflush(stdout);
 
         // Unlock the scheduler
         if (scheduler_unlock(global.scheduler))
@@ -62,8 +126,6 @@ int main(int argc, char* argv[])
 
         usleep(1);
     }
-
-    return 0;
 }
 
 /*

@@ -163,7 +163,7 @@ int main(int argc, char* argv[])
     sigaction_sigint.sa_handler = &handle_sigint;
     if (sigaction(SIGINT, &sigaction_sigint, NULL))
     {
-        perror("cannot handle SIGINT, manual IPC cleanup may be needed: sigaction(2) failed");
+        perror("cannot handle SIGINT, so manual IPC cleanup may be needed: sigaction(2) failed");
     }
 
     // Create and start outgoing clock
@@ -183,7 +183,7 @@ int main(int argc, char* argv[])
 
         // Generate a time between 1 and 1.000001 seconds (1s + [0, 1000ns])
         // This duration of time passage will be simulated
-        unsigned int dn = (unsigned int) (rand() % 1000); // NOLINT
+        unsigned int dn = (unsigned int) (rand() % 1000);
         unsigned int ds = 1;
 
         // Advance the clock
@@ -204,22 +204,22 @@ int main(int argc, char* argv[])
         // If resources are available for another process to be spawned
         if (scheduler_m_available(global.scheduler))
         {
+            // TODO: Add rate limit to average one new process per second
+
             // Launch a child
             pid_t child_pid = launch_child();
 
             // If doing so failed
             if (child_pid == -1)
             {
-                // Unlock the scheduler
-                if (scheduler_unlock(global.scheduler))
-                    return 1;
-
-                // Try again later
-                continue;
+                // Unlock the scheduler and die
+                scheduler_unlock(global.scheduler);
+                return 1;
             }
 
             // Complete spawning the child process
             // This allocates the process control block and whatnot
+            // This does not dispatch the process, however
             if (scheduler_m_complete_spawn(global.scheduler, child_pid))
             {
                 // Unlock the scheduler and die
@@ -228,14 +228,19 @@ int main(int argc, char* argv[])
             }
         }
 
+        // If a process is not scheduled, schedule one
+        // This will select one ready process and dispatch it
+        if (scheduler_get_dispatch_proc(global.scheduler) == -1)
+        {
+            scheduler_m_select_and_schedule(global.scheduler);
+        }
+
         // Unlock the scheduler
         if (scheduler_unlock(global.scheduler))
             return 1;
 
         usleep(1);
     }
-
-    return 0;
 }
 
 /*
