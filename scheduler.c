@@ -14,9 +14,6 @@
 
 #include "scheduler.h"
 
-#define SHM_FTOK_CHAR 'S'
-#define SEM_FTOK_CHAR 'T'
-
 /**
  * The constant coefficient alpha.
  */
@@ -32,6 +29,21 @@
  */
 #define BASE_TIME_QUANTUM_NANOS 10000000
 
+#define QUANTUM_DIVISOR_PRIO_HIGH 1
+#define QUANTUM_DIVISOR_PRIO_MED 2
+#define QUANTUM_DIVISOR_PRIO_LOW 3
+
+#define SHM_FTOK_CHAR 'S'
+#define SEM_FTOK_CHAR 'T'
+
+#define STATE_READY 0
+#define STATE_RUN 1
+#define STATE_WAIT 2
+
+#define PRIO_HIGH 0
+#define PRIO_MED 1
+#define PRIO_LOW 2
+
 /**
  * Process control block for a SUP.
  */
@@ -40,71 +52,53 @@ typedef struct
     /** The process ID. */
     pid_t pid;
 
-    /** The total CPU time this process has accumulated. */
+    /** The process state. */
+    int state;
+
+    /** The process priority. */
+    int prio;
+
+    /** The second part of the simulated time at which the process spawned. */
+    unsigned int spawn_time_seconds;
+
+    /** The nanosecond part of the simulated time at which the process spawned. */
+    unsigned int spawn_time_nanos;
+
+    /** The total simulated CPU time this process has accumulated (in nanoseconds). */
     unsigned int total_cpu_time;
 
-    /** The total wait time this process has accumulated. */
+    /** The total simulated wait time this process has accumulated (in nanoseconds). */
     unsigned int total_wait_time;
 } __process_ctl_block_s;
+
+/**
+ * A ready queue for a particular priority level.
+ */
+typedef struct
+{
+    /** The stored pids, structured as a circular buffer. */
+    pid_t pids[MAX_USER_PROCS];
+
+    /** The rolling head of the queue. */
+    unsigned int idx_head;
+
+    /** The rolling tail of the queue. */
+    unsigned int idx_tail;
+} __process_queue_s;
 
 /**
  * Internal memory for scheduler. Shared.
  */
 struct __scheduler_mem_s
 {
-    //
-    // Process Control Blocks
-    //
-
     /** All process control blocks for SUPs. */
     __process_ctl_block_s procs[MAX_USER_PROCS];
 
     /** Number of SUPs currently running. */
     unsigned int num_procs;
 
-    //
-    // Queues
-    //
-
-    /** The first process queue. High priority. */
-    pid_t queue_0[MAX_USER_PROCS];
-
-    /** Number of SUPs in queue 0. */
-    unsigned int queue_0_len;
-
-    /** The rolling head of the first process queue. */
-    unsigned int queue_0_head;
-
-    /** The rolling tail of the first process queue. */
-    unsigned int queue_0_tail;
-
-    /** The second process queue. Medium priority. */
-    pid_t queue_1[MAX_USER_PROCS];
-
-    /** Number of SUPs in queue 1. */
-    unsigned int queue_1_len;
-
-    /** The rolling head of the second process queue. */
-    unsigned int queue_1_head;
-
-    /** The rolling tail of the second process queue. */
-    unsigned int queue_1_tail;
-
-    /** The third process queue. Low priority. */
-    pid_t queue_2[MAX_USER_PROCS];
-
-    /** Number of SUPs in queue 2. */
-    unsigned int queue_2_len;
-
-    /** The rolling head of the third process queue. */
-    unsigned int queue_2_head;
-
-    /** The rolling tail of the third process queue. */
-    unsigned int queue_2_tail;
-
-    //
-    // Dispatch
-    //
+    /** Three ready queues for 3 priority levels: 0 = high, 1 = medium, and 2 = low. */
+    __process_queue_s ready_queues[3];
 
     /** The PID of the currently scheduled process, otherwise -1. */
     pid_t dispatch_proc;
@@ -114,35 +108,36 @@ struct __scheduler_mem_s
 };
 
 /**
- * Dequeue a SUP's pid from the desired scheduler queue. This implements a circular buffer.
+ * Find the process control block for the given SUP.
  */
-#define scheduler_dequeue_proc_pid(self, queue) \
-            ((pid_t) (self)->__mem->queue_##queue[((self)->__mem->queue_##queue##_head++) % MAX_USER_PROCS])
+static __process_ctl_block_s* scheduler_find_pcb(scheduler_s* self, pid_t pid)
+{
+    for (int i = 0; i < MAX_USER_PROCS; ++i)
+    {
+        __process_ctl_block_s* block = &self->__mem->procs[i];
 
-/**
- * Enqueue a SUP's pid to the desired scheduler queue. This implements a circular buffer.
- */
-#define scheduler_enqueue_proc_pid(self, pid, queue) \
-            ((self)->__mem->queue_##queue[(++(self)->__mem->queue_##queue##_tail) % MAX_USER_PROCS] = (pid_t) (pid))
+        if (block->pid == pid)
+            return block;
+    }
+
+    return NULL;
+}
 
 /**
  * Create a process control block for a newly spawned SUP with the given pid.
  */
-static void scheduler_create_pcb(scheduler_s* self, pid_t pid)
+static __process_ctl_block_s* scheduler_create_pcb(scheduler_s* self, pid_t pid)
 {
-    // Find index of first unallocated block
-    int block;
-    for (block = 0; block < MAX_USER_PROCS; ++block)
-    {
-        if (self->__mem->procs[block].pid == -1)
-            break;
-    }
+    // Find first unused process control block (pid of -1)
+    __process_ctl_block_s* block = scheduler_find_pcb(self, -1);
 
-    if (block == MAX_USER_PROCS)
-        return;
+    if (block == NULL)
+        return NULL;
 
-    memset(&self->__mem->procs[block], 0, sizeof(__process_ctl_block_s));
-    self->__mem->procs[block].pid = pid;
+    memset(block, 0, sizeof(__process_ctl_block_s));
+    block->pid = pid;
+
+    return block;
 }
 
 /**
@@ -150,25 +145,20 @@ static void scheduler_create_pcb(scheduler_s* self, pid_t pid)
  */
 static void scheduler_destroy_pcb(scheduler_s* self, pid_t pid)
 {
-    // Find index of corresponding block
-    int block;
-    for (block = 0; block < MAX_USER_PROCS; ++block)
-    {
-        if (self->__mem->procs[block].pid == pid)
-            break;
-    }
+    // Find process control block
+    __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
 
-    if (block == MAX_USER_PROCS)
+    if (block == NULL)
         return;
 
     // Mark block as unused
-    self->__mem->procs[block].pid = -1;
+    block->pid = -1;
 }
 
 /**
  * Clear all SUP process control blocks.
  */
-static void scheduler_clear_pcbs(scheduler_s* self)
+static void scheduler_clear_all_pcbs(scheduler_s* self)
 {
     // Zero out all memory for all blocks
     memset(self->__mem->procs, 0, MAX_USER_PROCS * sizeof(__process_ctl_block_s));
@@ -179,6 +169,43 @@ static void scheduler_clear_pcbs(scheduler_s* self)
         self->__mem->procs[i].pid = -1;
     }
 }
+
+/**
+ * Enqueue the SUP by pid into the appropriate ready queue with the given priority.
+ */
+static void scheduler_ready_enqueue(scheduler_s* self, pid_t pid, int prio)
+{
+    // Get queue of interest
+    __process_queue_s* queue = &self->__mem->ready_queues[prio];
+
+    // Enqueue process at end of buffer
+    queue->idx_tail++;
+    queue->idx_tail %= MAX_USER_PROCS;
+    queue->pids[queue->idx_tail] = pid;
+
+    // TODO: Remember to set prio in pcb
+}
+
+/**
+ * Dequeue a SUP from the ready queue with the given priority.
+ */
+static pid_t scheduler_ready_dequeue(scheduler_s* self, int prio)
+{
+    // Dequeue process from beginning of buffer
+    __process_queue_s* queue = &self->__mem->ready_queues[prio];
+    queue->idx_head++;
+    queue->idx_head %= MAX_USER_PROCS;
+    pid_t pid = queue->pids[queue->idx_head];
+    queue->pids[queue->idx_head] = -1;
+
+    return pid;
+}
+
+/**
+ * Determine the length of the ready queue with the given priority.
+ */
+#define scheduler_ready_length(self, prio) \
+            ((self)->__mem->ready_queues[(prio)].idx_tail - (self)->__mem->ready_queues[(prio)].idx_head + 1)
 
 /**
  * Open a master side scheduler.
@@ -456,7 +483,8 @@ scheduler_s* scheduler_construct(scheduler_s* self, int side)
     case SCHEDULER_SIDE_MASTER:
         if (scheduler_open_master(self))
             return NULL;
-        scheduler_clear_pcbs(self);
+        scheduler_clear_all_pcbs(self);
+        self->__mem->dispatch_proc = -1;
         break;
     case SCHEDULER_SIDE_SLAVE:
         if (scheduler_open_slave(self))
@@ -542,8 +570,8 @@ int scheduler_m_complete_spawn(scheduler_s* self, pid_t pid)
     // Create process control block
     scheduler_create_pcb(self, pid);
 
-    // Start the process in queue 0
-    scheduler_enqueue_proc_pid(self, pid, 0);
+    // Start the process with high priority
+    scheduler_ready_enqueue(self, pid, PRIO_HIGH);
 
     self->__mem->num_procs++;
 
@@ -570,7 +598,68 @@ pid_t scheduler_m_select_and_schedule(scheduler_s* self)
     if (self->side != SCHEDULER_SIDE_MASTER)
         return 1;
 
-    return 0;
+    //
+    // Selection
+    //
+
+    // The pid of the selected process
+    pid_t pid;
+
+    // Pull from high priority first, then medium priority, then low priority
+    if (scheduler_ready_length(self, PRIO_HIGH))
+    {
+        pid = scheduler_ready_dequeue(self, PRIO_HIGH);
+    }
+    else if (scheduler_ready_length(self, PRIO_MED))
+    {
+        pid = scheduler_ready_dequeue(self, PRIO_MED);
+    }
+    else if (scheduler_ready_length(self, PRIO_LOW))
+    {
+        pid = scheduler_ready_dequeue(self, PRIO_LOW);
+    }
+    else
+    {
+        // There are no ready processes in the system
+        return -1;
+    }
+
+    //
+    // Scheduling
+    //
+
+    // Get PCB of process
+    __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
+
+    // The time quantum allocated for this process
+    unsigned int quantum = BASE_TIME_QUANTUM_NANOS;
+
+    // Use a QUANTUM DIVISOR!!! to manipulate time quantum based on priority
+    // Lower priorities should get less time, which forms a negative feedback loop
+    // Hopefully, each process should fit into a groove at just the right priority for the system
+    // This is just a simulation, though, so it's quite granular (not the most optimal configuration)
+    switch (block->prio)
+    {
+    case PRIO_HIGH:
+        quantum /= QUANTUM_DIVISOR_PRIO_HIGH;
+        break;
+    case PRIO_MED:
+        quantum /= QUANTUM_DIVISOR_PRIO_MED;
+        break;
+    case PRIO_LOW:
+        quantum /= QUANTUM_DIVISOR_PRIO_LOW;
+        break;
+    default:
+        // ???
+        break;
+    }
+
+    // Configure the currently dispatched process
+    // Once the scheduler is unlocked by the master, the slave scheduler(s) will pick this up
+    self->__mem->dispatch_proc = pid;
+    self->__mem->dispatch_quantum = quantum;
+
+    return pid;
 }
 
 pid_t scheduler_get_dispatch_proc(scheduler_s* self)

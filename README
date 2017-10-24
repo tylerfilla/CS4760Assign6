@@ -17,6 +17,10 @@ Note: The "every time a process is scheduled" bit is handled in the child proces
 There is a contradiction in the assignment! Namely, the two bits that say to generate random numbers.
 I'm going with the one under OSS, as it is more strict and more detailed.
 
+Note: I also keep track of the simulated process's states using READY, RUN, and WAIT.
+
+By design, oss.c and child.c should have rather low complexity.
+
 Directory Structure
 ===================
 

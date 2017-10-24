@@ -75,8 +75,8 @@ static pid_t launch_child()
 
         // Redirect child stderr and stdout to log file
         // This is a hack to allow logging from children without communicating the log fd
-        dup2(fileno(global.log_file), STDERR_FILENO);
-        dup2(fileno(global.log_file), STDOUT_FILENO);
+        //dup2(fileno(global.log_file), STDERR_FILENO);
+        //dup2(fileno(global.log_file), STDOUT_FILENO);
 
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
@@ -204,8 +204,6 @@ int main(int argc, char* argv[])
         // If resources are available for another process to be spawned
         if (scheduler_m_available(global.scheduler))
         {
-            // TODO: Add rate limit to average one new process per second
-
             // Launch a child
             pid_t child_pid = launch_child();
 
@@ -226,6 +224,8 @@ int main(int argc, char* argv[])
                 scheduler_unlock(global.scheduler);
                 return 1;
             }
+
+            printf("spawned user proc %d\n", child_pid);
         }
 
         // If a process is not scheduled, schedule one
@@ -235,119 +235,13 @@ int main(int argc, char* argv[])
             scheduler_m_select_and_schedule(global.scheduler);
         }
 
+        fflush(stdout);
+
         // Unlock the scheduler
         if (scheduler_unlock(global.scheduler))
             return 1;
 
-        usleep(1);
+        sleep(1); // TODO: Does this limit rate enough to provide approximately 1 spawn on average?
+        // This also lets the simulated clock somewhat sync up to real-ish time for a bit
     }
 }
-
-/*
-        // Rules for natural termination, as specified in the assignment:
-        // 1. Two simulated seconds have passed
-        // 2. One hundred processes total have been spawned
-        // 3. Real time limit elapsed
-
-        // See rule 1
-        if (seconds >= 2)
-        {
-            terminating = 1;
-        }
-
-        // See rule 2
-        if (global.total_num_processes >= 100)
-        {
-            terminating = 2;
-        }
-
-        // See rule 3
-        if (time(NULL) - time_start > param_time_limit)
-        {
-            terminating = 3;
-        }
-
-        // Enter critical section on shm_msg
-        // This uses System V semaphores under the hood (see scheduler.c)
-        if (scheduler_lock(global.shm_msg))
-            break;
-
-        // If a message is waiting
-        if (scheduler_test(global.shm_msg))
-        {
-            // Get a copy of the message
-            scheduler_msg_s msg = scheduler_poll(global.shm_msg);
-
-            // Mark termination
-            global.current_num_processes--;
-
-            // Get the time of receipt
-            if (clock_lock(global.clock))
-                break;
-            int nanos_recv = clock_get_nanos(global.clock);
-            int seconds_recv = clock_get_seconds(global.clock);
-            if (clock_unlock(global.clock))
-                break;
-
-            // Print requested log information from assignment
-            if (global.log_file)
-            {
-                fprintf(global.log_file, "termination notice from child at %ds %dns, received at %ds %dns\n", msg.arg1,
-                        msg.arg2, seconds_recv, nanos_recv);
-
-                // NOTE: We're writing to a file "simultaneously" with two processes
-                // Writes are guarded by semaphores, but there's still buffering going on with the FILE*
-                // Sentences can still be interspersed, but in massive buffered blocks
-                // Flushing immediately after writing here fixes that
-                fflush(global.log_file);
-            }
-
-            // Leave critical section on shm_msg
-            if (scheduler_unlock(global.shm_msg))
-                break;
-
-            // Fill in for that process with another child
-            if (terminating == 0)
-            {
-                wait(NULL);
-                launch_child();
-            }
-        }
-        else
-        {
-            // Leave critical section on shm_msg
-            if (scheduler_unlock(global.shm_msg))
-                break;
-        }
-
-        // Stop after all children have terminated
-        if (global.current_num_processes <= 0)
-        {
-            // Lock scheduler to get access to log file
-            if (global.log_file && !scheduler_lock(global.shm_msg))
-            {
-                // Log message about why termination happened
-                switch (terminating)
-                {
-                case 1:
-                    fprintf(global.log_file, "terminated: 2 simulated seconds passed\n");
-                    break;
-                case 2:
-                    fprintf(global.log_file, "terminated: 100 processes spawned in total\n");
-                    break;
-                case 3:
-                    fprintf(global.log_file, "terminated: real time limit of %ds elapsed\n", param_time_limit);
-                    break;
-                default:
-                    // ???
-                    break;
-                }
-                fflush(global.log_file);
-
-                // Unlock scheduler after logging
-                scheduler_unlock(global.shm_msg);
-            }
-
-            break;
-        }
- */

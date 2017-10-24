@@ -84,16 +84,27 @@ int main(int argc, char* argv[])
             {
             case 0:
                 // Terminate immediately
+                printf("user proc %d: rolled a 0: terminating immediately (sim time %ds, %dns)\n", getpid(),
+                        start_seconds, start_nanos);
                 scheduler_unlock(global.scheduler);
                 return 0;
             case 1:
                 // Terminate after time quantum
+                printf("user proc %d: rolled a 1: terminating after time quantum (sim time %ds, %dns)\n", getpid(),
+                        start_seconds, start_nanos);
+                printf("user proc %d: 1 not implemented! Yield and retry...\n", getpid());
                 break;
             case 2:
                 // Block on a simulated I/O event
+                printf("user proc %d: rolled a 2: waiting on an event (sim time %ds, %dns)\n", getpid(), start_seconds,
+                        start_nanos);
+                printf("user proc %d: 2 not implemented! Yield and retry...\n", getpid());
                 break;
             case 3:
                 // Run for some time and yield
+                printf("user proc %d: rolled a 3: running for some time interval (sim time %ds, %dns)\n", getpid(),
+                        start_seconds, start_nanos);
+                printf("user proc %d: 3 not implemented! Yield and retry...\n", getpid());
                 break;
             default:
                 break;
