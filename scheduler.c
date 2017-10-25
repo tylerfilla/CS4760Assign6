@@ -823,8 +823,22 @@ int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int tim
     printf(" => last cpu:  %ldns,  last wait: %ldns\n", cpu_time, wait_time);
     printf(" => total cpu: %ldns, total wait: %ldns\n", block->total_cpu_time, block->total_wait_time);
 
-    // TODO: Re-evaluate priority of SUP
     int prio = block->prio;
+
+    if (wait_time > TRANSITION_TSHLD_A && wait_time > MULTI_LEVEL_ALPHA * scheduler_ready_wait_avg(self, PRIO_MED))
+    {
+        // Penalize process to medium priority
+        prio = PRIO_MED;
+        printf("child process %d: dropped to priority MED\n", pid);
+    }
+    else if (wait_time > TRANSITION_TSHLD_B && wait_time > MULTI_LEVEL_BETA * scheduler_ready_wait_avg(self, PRIO_LOW))
+    {
+        // Penalize process to low priority
+        prio = PRIO_LOW;
+        printf("child process %d: dropped to priority LOW\n", pid);
+    }
+
+    block->prio = prio;
 
     // Enqueue the SUP as READY with the new priority
     scheduler_ready_enqueue(self, pid, prio);
