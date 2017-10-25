@@ -206,9 +206,37 @@ int main(int argc, char* argv[])
                 }
                 break;
             case 3:
-                // Run for some time and yield
-                printf("user proc %d: rolled a 3: running for some time interval\n", getpid());
-                printf("user proc %d: 3 NOT YET IMPLEMENTED! Yield and retry...\n", getpid());
+                // Run for some time (a percent of the quantum) and yield
+                printf("user proc %d: rolled a 3: running for some percentage of quantum\n", getpid());
+                {
+                    unsigned int quantum_fraction = quantum / (1 + rand() % 99);
+
+                    printf("user proc %d: info: running for %dns\n", getpid(), quantum_fraction);
+
+                    while (1)
+                    {
+                        // Lock the clock
+                        if (clock_lock(g.clock))
+                            return 1;
+
+                        // Get latest time from clock
+                        unsigned int now_nanos = clock_get_nanos(g.clock);
+                        unsigned int now_seconds = clock_get_seconds(g.clock);
+
+                        // Unlock the clock
+                        if (clock_unlock(g.clock))
+                            return 1;
+
+                        // Absolute latest time
+                        unsigned long now_time = (unsigned long) now_nanos + (unsigned long) now_seconds * 1000000000l;
+
+                        // Break once quantum is used
+                        if (now_time - start_time >= quantum_fraction)
+                            break;
+
+                        usleep(100);
+                    }
+                }
                 break;
             default:
                 break;
