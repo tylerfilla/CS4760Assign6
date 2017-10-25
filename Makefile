@@ -6,7 +6,7 @@
 
 AR=ar
 CC=gcc
-CFLAGS=-Wall -std=gnu99
+CFLAGS=-Wall -std=gnu99 -g
 LDFLAGS=
 
 EXECUTABLES=child oss

@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <sys/ipc.h>
@@ -79,6 +80,9 @@ typedef struct
 {
     /** The stored pids, structured as a circular buffer. */
     pid_t pids[MAX_USER_PROCS];
+
+    /** The number of elements in the queue. */
+    unsigned int length;
 
     /** The rolling head of the queue. */
     unsigned int idx_head;
@@ -176,15 +180,21 @@ static void scheduler_clear_all_pcbs(scheduler_s* self)
  */
 static void scheduler_ready_enqueue(scheduler_s* self, pid_t pid, int prio)
 {
-    // Get queue of interest
     __process_queue_s* queue = &self->__mem->ready_queues[prio];
 
-    // Enqueue process at end of buffer
-    queue->idx_tail++;
-    queue->idx_tail %= MAX_USER_PROCS;
-    queue->pids[queue->idx_tail] = pid;
+    if (queue->length == 0)
+    {
+        queue->idx_head = 0;
+        queue->idx_tail = 0;
+    }
+    else
+    {
+        queue->idx_tail++;
+        queue->idx_tail %= MAX_USER_PROCS;
+    }
 
-    // TODO: Remember to set prio in pcb
+    queue->length++;
+    queue->pids[queue->idx_tail] = pid;
 }
 
 /**
@@ -192,21 +202,24 @@ static void scheduler_ready_enqueue(scheduler_s* self, pid_t pid, int prio)
  */
 static pid_t scheduler_ready_dequeue(scheduler_s* self, int prio)
 {
-    // Dequeue process from beginning of buffer
     __process_queue_s* queue = &self->__mem->ready_queues[prio];
+
+    if (queue->length == 0)
+    {
+        fprintf(stderr, "attempt to dequeue from ready queue %d when empty\n", prio);
+        exit(1);
+    }
+
+    pid_t pid = queue->pids[queue->idx_head];
+
+    queue->length--;
+    queue->pids[queue->idx_head] = -1;
+
     queue->idx_head++;
     queue->idx_head %= MAX_USER_PROCS;
-    pid_t pid = queue->pids[queue->idx_head];
-    queue->pids[queue->idx_head] = -1;
 
     return pid;
 }
-
-/**
- * Determine the length of the ready queue with the given priority.
- */
-#define scheduler_ready_length(self, prio) \
-            ((self)->__mem->ready_queues[(prio)].idx_tail - (self)->__mem->ready_queues[(prio)].idx_head + 1)
 
 /**
  * Open a master side scheduler.
@@ -279,6 +292,15 @@ static int scheduler_open_master(scheduler_s* self)
     self->shmid = shmid;
     self->semid = semid;
     self->__mem = shm;
+
+    // Initialize ready queues
+    for (int q = 0; q < 3; ++q)
+    {
+        for (int p = 0; p < MAX_USER_PROCS; ++p)
+        {
+            self->__mem->ready_queues[q].pids[p] = -1;
+        }
+    }
 
     return 0;
 
@@ -576,6 +598,17 @@ int scheduler_complete_spawn(scheduler_s* self, pid_t pid)
 
     self->__mem->num_procs++;
 
+    for (int q = 0; q < 3; ++q)
+    {
+        printf("queue %d (head: %d, tail: %d, length: %d): ", q, self->__mem->ready_queues[q].idx_head,
+                self->__mem->ready_queues[q].idx_tail, self->__mem->ready_queues[q].length);
+        for (int i = 0; i < MAX_USER_PROCS; ++i)
+        {
+            printf("%d, ", self->__mem->ready_queues[q].pids[i]);
+        }
+        printf("\n");
+    }
+
     return 0;
 }
 
@@ -589,6 +622,13 @@ int scheduler_complete_death(scheduler_s* self, pid_t pid)
 
     // Destroy process control block
     scheduler_destroy_pcb(self, pid);
+
+    self->__mem->num_procs--;
+
+    if (self->__mem->dispatch_proc == pid)
+    {
+        self->__mem->dispatch_proc = -1;
+    }
 
     return 0;
 }
@@ -607,15 +647,15 @@ pid_t scheduler_select_and_schedule(scheduler_s* self)
     pid_t pid;
 
     // Pull from high priority first, then medium priority, then low priority
-    if (scheduler_ready_length(self, PRIO_HIGH))
+    if (self->__mem->ready_queues[PRIO_HIGH].length > 0)
     {
         pid = scheduler_ready_dequeue(self, PRIO_HIGH);
     }
-    else if (scheduler_ready_length(self, PRIO_MED))
+    else if (self->__mem->ready_queues[PRIO_MED].length > 0)
     {
         pid = scheduler_ready_dequeue(self, PRIO_MED);
     }
-    else if (scheduler_ready_length(self, PRIO_LOW))
+    else if (self->__mem->ready_queues[PRIO_LOW].length > 0)
     {
         pid = scheduler_ready_dequeue(self, PRIO_LOW);
     }

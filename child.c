@@ -165,8 +165,8 @@ int main(int argc, char* argv[])
             if (scheduler_yield(g.scheduler))
                 return 1;
 
+            printf("user proc %d: summary: used %ldns cpu time\n", getpid(), (stop_time - start_time));
             printf("user proc %d: state is now READY\n", getpid());
-            printf("user proc %d: burst summary: %ldns cpu\n", getpid(), (stop_time - start_time));
         }
 
         fflush(stdout);

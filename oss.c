@@ -18,8 +18,6 @@
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
 
-// TODO: Current task: handling SIGCHLD and calling complete_death
-
 static struct
 {
     /** The desired path to the log file. */
@@ -34,11 +32,10 @@ static struct
     /** The master scheduler instance. */
     scheduler_s* scheduler;
 
-    /** The number of spawned child processes. */
-    volatile sig_atomic_t num_children;
-
     /** Nonzero once SIGINT received. */
     volatile sig_atomic_t interrupted;
+
+    volatile sig_atomic_t dead_proc;
 } g;
 
 static void handle_exit()
@@ -66,12 +63,11 @@ static void handle_exit()
 
 static void handle_sigchld(int sig)
 {
-    g.num_children--;
-
     // Obtain the zombie's pid
     pid_t pid = wait(NULL);
 
-    printf("got death notice for %d\n", pid); // FIXME: Not safe
+    // Mark process as dead
+    g.dead_proc = pid;
 }
 
 static void handle_sigint(int sig)
@@ -104,7 +100,6 @@ static pid_t launch_child()
     else if (child_pid > 0)
     {
         // Fork succeeded, now in parent
-        g.num_children++;
         return child_pid;
     }
     else
@@ -198,6 +193,9 @@ int main(int argc, char* argv[])
     // Create master scheduler
     g.scheduler = scheduler_new(SCHEDULER_SIDE_MASTER);
 
+    unsigned int next_proc_nanos = 0;
+    unsigned int next_proc_seconds = 0;
+
     while (1)
     {
         // Lock the clock
@@ -224,31 +222,51 @@ int main(int argc, char* argv[])
         if (scheduler_lock(g.scheduler))
             return 1;
 
-        // If resources are available for another process to be spawned
-        if (scheduler_available(g.scheduler))
+        // If it is time to try to create a new process
+        if (now_nanos >= next_proc_nanos && now_seconds >= next_proc_seconds)
         {
-            // Launch a child
-            pid_t child_pid = launch_child();
-
-            // If doing so failed
-            if (child_pid == -1)
+            // If resources are available for another process to be spawned
+            if (scheduler_available(g.scheduler))
             {
-                // Unlock the scheduler and die
-                scheduler_unlock(g.scheduler);
-                return 1;
+                // Launch a child
+                pid_t child_pid = launch_child();
+
+                // If doing so failed
+                if (child_pid == -1)
+                {
+                    // Unlock the scheduler and die
+                    scheduler_unlock(g.scheduler);
+                    return 1;
+                }
+
+                // Complete spawning the child process
+                // This allocates the process control block and whatnot
+                // This does not dispatch the process, however
+                if (scheduler_complete_spawn(g.scheduler, child_pid))
+                {
+                    // Unlock the scheduler and die
+                    scheduler_unlock(g.scheduler);
+                    return 1;
+                }
+
+                printf("spawned user proc %d (sim time %ds, %dns)\n", child_pid, now_seconds, now_nanos);
             }
 
-            // Complete spawning the child process
-            // This allocates the process control block and whatnot
-            // This does not dispatch the process, however
-            if (scheduler_complete_spawn(g.scheduler, child_pid))
-            {
-                // Unlock the scheduler and die
-                scheduler_unlock(g.scheduler);
-                return 1;
-            }
+            // Schedule next process spawn
+            int next_proc_delay = rand() % 3;
+            next_proc_nanos = now_nanos;
+            next_proc_seconds = now_seconds + next_proc_delay;
+        }
 
-            printf("spawned user proc %d\n", child_pid);
+        // Handle dead SUPs
+        if (g.dead_proc)
+        {
+            // Not atomic!
+            pid_t pid = g.dead_proc;
+            g.dead_proc = 0;
+
+            // Need to handle death
+            scheduler_complete_death(g.scheduler, pid);
         }
 
         // If a process is not currently scheduled
@@ -257,11 +275,21 @@ int main(int argc, char* argv[])
             // Select and schedule (dispatch) the next SUP
             pid_t pid = scheduler_select_and_schedule(g.scheduler);
 
-            printf("dispatched user proc %d\n", pid);
+            // If a process couldn't be scheduled
+            // TODO: This is part of CPU idle time
+            if (pid == -1)
+            {
+                // Unlock the scheduler
+                if (scheduler_unlock(g.scheduler))
+                    return 1;
+
+                // Try again later
+                continue;
+            }
+
+            printf("dispatched user proc %d (sim time %ds, %dns)\n", pid, now_seconds, now_nanos);
             printf("user proc %d: state is now RUN\n", pid);
         }
-
-        fflush(stdout);
 
         // Unlock the scheduler
         if (scheduler_unlock(g.scheduler))
@@ -269,18 +297,21 @@ int main(int argc, char* argv[])
 
         if (g.interrupted)
         {
-            printf("execution interrupted\n");
+            fprintf(stderr, "execution interrupted\n");
             break;
         }
 
-        sleep(1); // TODO: Does this limit rate enough to provide approximately 1 spawn on average?
-        // This also lets the simulated clock somewhat sync up to real-ish time for a bit
+        fflush(stdout);
+
+        sleep(1);
     }
 
+    /*
     // Wait for remaining children to die
-    while (g.num_children > 0)
+    while (wait(NULL) > 0)
     {
         killpg(getpgrp(), SIGINT);
         usleep(1000);
     }
+     */
 }
