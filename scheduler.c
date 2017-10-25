@@ -865,11 +865,6 @@ int scheduler_wait(scheduler_s* self)
 
     pid_t pid = getpid();
 
-    // Make sure pids match
-    //if (self->__mem->dispatch_proc != pid)
-    //    return 1;
-    // Is this even needed?
-
     // Put SUP into WAIT state
     __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
     block->state = STATE_WAIT;

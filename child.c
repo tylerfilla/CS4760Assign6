@@ -158,8 +158,6 @@ int main(int argc, char* argv[])
                 break;
             case 2:
                 // Block on a simulated I/O event
-                // FIXME: Another SUP should be able to run while this SUP is in WAIT
-                // To do so will require two new scheduler functions and a new queue: scheduler_wait and scheduler_unwait
                 printf("user proc %d: rolled a 2: waiting on an event\n", getpid());
                 {
                     // Randomize duration of "event"
@@ -180,16 +178,12 @@ int main(int argc, char* argv[])
                     printf("user proc %d: info: event will complete after %ldns\n", getpid(), evt_duration_time);
 
                     // Put SUP into WAIT
-                    printf("about to lock before waiting: %d\n", getpid());
-                    if (scheduler_lock(g.scheduler)) // possibly sticking here
+                    if (scheduler_lock(g.scheduler))
                         return 1;
-                    printf("locked, about to wait: %d\n", getpid());
                     if (scheduler_wait(g.scheduler))
                         return 1;
-                    printf("waiting, about to unlock: %d\n", getpid());
                     if (scheduler_unlock(g.scheduler))
                         return 1;
-                    printf("unlocked after waiting: %d\n", getpid());
 
                     //
                     // This SUP is now considered to be in the WAIT state. It may continue to run as a real process on

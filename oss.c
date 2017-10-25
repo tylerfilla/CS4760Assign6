@@ -317,6 +317,6 @@ int main(int argc, char* argv[])
 
         fflush(stdout);
 
-        sleep(1);
+        usleep(100000);
     }
 }
