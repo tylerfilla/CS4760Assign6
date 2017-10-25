@@ -79,9 +79,14 @@ int main(int argc, char* argv[])
         // It is at this point that the SUP is considered to be running
         if (scheduler_get_dispatch_proc(g.scheduler) == getpid())
         {
+            // Get assigned time quantum
+            unsigned int quantum = scheduler_get_dispatch_quantum(g.scheduler);
+
             // Unlock the scheduler
             if (scheduler_unlock(g.scheduler))
                 return 1;
+
+            printf("my time quantum: %d\n", quantum);
 
             //
             // Beginning Time
@@ -125,8 +130,31 @@ int main(int argc, char* argv[])
                 break;
             case 1:
                 // Terminate after time quantum
-                printf("user proc %d: rolled a 1: terminating after time quantum\n", getpid());
-                printf("user proc %d: 1 NOT YET IMPLEMENTED! Yield and retry...\n", getpid());
+                printf("user proc %d: rolled a 1: terminating after full time quantum\n", getpid());
+                while (1)
+                {
+                    // Lock the clock
+                    if (clock_lock(g.clock))
+                        return 1;
+
+                    // Get latest time from clock
+                    unsigned int now_nanos = clock_get_nanos(g.clock);
+                    unsigned int now_seconds = clock_get_seconds(g.clock);
+
+                    // Unlock the clock
+                    if (clock_unlock(g.clock))
+                        return 1;
+
+                    // Absolute latest time
+                    unsigned long now_time = (unsigned long) now_nanos + (unsigned long) now_seconds * 1000000000l;
+
+                    // Break once quantum is used
+                    if (now_time - start_time >= quantum)
+                        break;
+
+                    usleep(100);
+                }
+                terminate = 1;
                 break;
             case 2:
                 // Block on a simulated I/O event
@@ -140,12 +168,6 @@ int main(int argc, char* argv[])
                 break;
             default:
                 break;
-            }
-
-            // FIXME
-            if (!terminate)
-            {
-                sleep(1);
             }
 
             //

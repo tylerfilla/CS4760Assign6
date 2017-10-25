@@ -29,6 +29,9 @@ Note: I use circular buffers to implement the ready queues.
 
 Don't forget to remove -g.
 
+Note: The clock is granular. It may show either no passage or a lot of passage for relatively short periods of time.
+Direct result of assignment requirements.
+
 Directory Structure
 ===================
 

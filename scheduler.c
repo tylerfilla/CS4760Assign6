@@ -17,24 +17,24 @@
 #include "scheduler.h"
 
 /**
- * The constant coefficient alpha.
+ * The constant coefficient alpha used in scheduling.
  */
 #define MULTI_LEVEL_ALPHA 1
 
 /**
- * The transition threshold between priorities 1 and 2.
+ * The wait time transition threshold between priorities 1 and 2 in simulated nanoseconds.
  */
-#define TRANSITION_TSHLD_A 500
+#define TRANSITION_TSHLD_A 1000000000
 
 /**
- * The constant coefficient beta.
+ * The constant coefficient beta used in scheduling.
  */
-#define MULTI_LEVEL_BETA 1
+#define MULTI_LEVEL_BETA 2
 
 /**
- * The transition threshold between priorities 2 and 3.
+ * The wait time transition threshold between priorities 2 and 3 in simulated nanoseconds.
  */
-#define TRANSITION_TSHLD_B 500
+#define TRANSITION_TSHLD_B 1100000000
 
 /**
  * The base time quantum before priority is taken into account.
