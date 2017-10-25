@@ -67,6 +67,7 @@ int main(int argc, char* argv[])
     g.scheduler = scheduler_new(SCHEDULER_SIDE_SLAVE);
 
     int terminate = 0;
+    int suppress = 0;
 
     // This loop represents part of the operating system control
     while (1)
@@ -158,8 +159,51 @@ int main(int argc, char* argv[])
                 break;
             case 2:
                 // Block on a simulated I/O event
+                // FIXME: Another SUP should be able to run while this SUP is in WAIT
+                // To do so will require two new scheduler functions and a new queue: scheduler_wait and scheduler_unwait
                 printf("user proc %d: rolled a 2: waiting on an event\n", getpid());
-                printf("user proc %d: 2 NOT YET IMPLEMENTED! Yield and retry...\n", getpid());
+                {
+                    printf("user proc %d: state is now WAIT\n", getpid());
+
+                    // Randomize duration of "event"
+                    unsigned int evt_duration_nanos = (unsigned int) (rand() % 1000);
+                    unsigned int evt_duration_seconds = (unsigned int) (rand() % 5);
+
+                    // Compute end of event
+                    unsigned int evt_done_nanos = start_nanos + evt_duration_nanos;
+                    unsigned int evt_done_seconds = start_seconds + evt_duration_seconds;
+
+                    // Absolute event end time
+                    unsigned long evt_done_time =
+                            (unsigned long) evt_done_nanos + (unsigned long) evt_done_seconds * 1000000000l;
+
+                    while (1)
+                    {
+                        // Lock the clock
+                        if (clock_lock(g.clock))
+                            return 1;
+
+                        // Get latest time from clock
+                        unsigned int now_nanos = clock_get_nanos(g.clock);
+                        unsigned int now_seconds = clock_get_seconds(g.clock);
+
+                        // Unlock the clock
+                        if (clock_unlock(g.clock))
+                            return 1;
+
+                        // Absolute latest time
+                        unsigned long now_time = (unsigned long) now_nanos + (unsigned long) now_seconds * 1000000000l;
+
+                        // Break once event "occurs"
+                        if (now_time >= evt_done_time)
+                            break;
+
+                        usleep(100);
+                    }
+
+                    printf("user proc %d: state is now READY\n", getpid());
+                    suppress = 1;
+                }
                 break;
             case 3:
                 // Run for some time and yield
@@ -204,11 +248,14 @@ int main(int argc, char* argv[])
             if (scheduler_yield(g.scheduler, stop_nanos, stop_seconds, cpu_time))
                 return 1;
 
-            printf("user proc %d: summary: used %ldns cpu time\n", getpid(), cpu_time);
-
-            if (!terminate)
+            if (!suppress)
             {
-                printf("user proc %d: state is now READY\n", getpid());
+                printf("user proc %d: summary: used %ldns cpu time\n", getpid(), cpu_time);
+
+                if (!terminate)
+                {
+                    printf("user proc %d: state is now READY\n", getpid());
+                }
             }
         }
 
