@@ -22,9 +22,19 @@
 #define MULTI_LEVEL_ALPHA 1
 
 /**
+ * The transition threshold between priorities 1 and 2.
+ */
+#define TRANSITION_TSHLD_A 500
+
+/**
  * The constant coefficient beta.
  */
 #define MULTI_LEVEL_BETA 1
+
+/**
+ * The transition threshold between priorities 2 and 3.
+ */
+#define TRANSITION_TSHLD_B 500
 
 /**
  * The base time quantum before priority is taken into account.
@@ -239,11 +249,40 @@ static void scheduler_ready_remove(scheduler_s* self, pid_t pid, int prio)
         pid_t p_pid = scheduler_ready_dequeue(self, prio);
 
         // Skip matching pid
+        // Should this also increment p?
         if (p_pid == pid)
             continue;
 
         scheduler_ready_enqueue(self, p_pid, prio);
     }
+}
+
+/**
+ * Determine the average waiting time on the ready queue with the given priority.
+ */
+static unsigned long scheduler_ready_wait_avg(scheduler_s* self, int prio)
+{
+    __process_queue_s* queue = &self->__mem->ready_queues[prio];
+
+    // Definition: Queue of length 0 has average wait 0
+    if (queue->length == 0)
+        return 0;
+
+    unsigned long sum = 0;
+
+    for (int p = 0; p < MAX_USER_PROCS; ++p)
+    {
+        pid_t pid = queue->pids[p];
+
+        if (pid == -1)
+            continue;
+
+        // Super inefficient way to get wait time for this process
+        __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
+        sum += block->total_wait_time;
+    }
+
+    return sum / queue->length;
 }
 
 /**
@@ -641,6 +680,7 @@ int scheduler_complete_spawn(scheduler_s* self, pid_t pid, unsigned int time_nan
             printf("%d, ", self->__mem->ready_queues[q].pids[i]);
         }
         printf("\n");
+        printf(" -> avg wait: %ld\n", scheduler_ready_wait_avg(self, q));
     }
 
     return 0;
