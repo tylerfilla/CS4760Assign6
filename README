@@ -21,6 +21,10 @@ Note: I also keep track of the simulated process's states using READY, RUN, and 
 
 By design, oss.c and child.c should have rather low complexity.
 
+Difference between child process and SUP: former has a small part that represents the OS.
+This simulation is internally more similar to a cooperative multitasking system, but the above difference helps us use
+    cooperation to simulate preemption.
+
 Directory Structure
 ===================
 

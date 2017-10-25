@@ -91,7 +91,7 @@ int scheduler_unlock(scheduler_s* scheduler);
  * @param scheduler The scheduler instance
  * @return Nonzero if such is the case, otherwise zero
  */
-int scheduler_m_available(scheduler_s* scheduler);
+int scheduler_available(scheduler_s* scheduler);
 
 /**
  * Complete the spawning of a new SUP. This allocates resources for it.
@@ -102,7 +102,7 @@ int scheduler_m_available(scheduler_s* scheduler);
  * @param pid The new process's pid
  * @return Zero on success, otherwise nonzero
  */
-int scheduler_m_complete_spawn(scheduler_s* scheduler, pid_t pid);
+int scheduler_complete_spawn(scheduler_s* scheduler, pid_t pid);
 
 /**
  * Complete the death of an old SUP. This releases resources for it.
@@ -111,7 +111,7 @@ int scheduler_m_complete_spawn(scheduler_s* scheduler, pid_t pid);
  * @param pid The old process's pid
  * @return Zero on success, otherwise nonzero
  */
-int scheduler_m_complete_death(scheduler_s* scheduler, pid_t pid);
+int scheduler_complete_death(scheduler_s* scheduler, pid_t pid);
 
 /**
  * On a master-side scheduler instance, select and schedule the next SUP to execute.
@@ -121,7 +121,7 @@ int scheduler_m_complete_death(scheduler_s* scheduler, pid_t pid);
  * @param scheduler The scheduler instance
  * @return The pid of the scheduled process, otherwise -1
  */
-pid_t scheduler_m_select_and_schedule(scheduler_s* scheduler);
+pid_t scheduler_select_and_schedule(scheduler_s* scheduler);
 
 /**
  * On a slave-side scheduler instance, get the currently scheduled and dispatched process's pid.
@@ -138,5 +138,13 @@ pid_t scheduler_get_dispatch_proc(scheduler_s* scheduler);
  * @return The scheduled time quantum in nanoseconds
  */
 unsigned int scheduler_get_dispatch_quantum(scheduler_s* scheduler);
+
+/**
+ * On a slave-side scheduler instance, indicate a yield of control back to the system.
+ *
+ * @param scheduler The scheduler instance
+ * @return Zero on success, otherwise nonzero
+ */
+int scheduler_yield(scheduler_s* scheduler);
 
 #endif // #ifndef SCHEDULER_H

@@ -4,6 +4,7 @@
  * Assignment 4
  */
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -20,12 +21,28 @@ static struct
 
     /** The slave scheduler instance. */
     scheduler_s* scheduler;
-} global;
+
+    /** Nonzero once SIGINT received. */
+    volatile sig_atomic_t interrupted;
+} g;
 
 static void handle_exit()
 {
-    clock_delete(global.clock);
-    scheduler_delete(global.scheduler);
+    // Clean up IPC-heavy components
+    if (g.clock)
+    {
+        clock_delete(g.clock);
+    }
+    if (g.scheduler)
+    {
+        scheduler_delete(g.scheduler);
+    }
+}
+
+static void handle_sigint(int sig)
+{
+    // Set interrupted flag
+    g.interrupted = 1;
 }
 
 int main(int argc, char* argv[])
@@ -33,37 +50,51 @@ int main(int argc, char* argv[])
     atexit(&handle_exit);
     srand((unsigned int) time(NULL));
 
+    // Handle SIGINT
+    struct sigaction sigaction_sigint = {};
+    sigaction_sigint.sa_handler = &handle_sigint;
+    if (sigaction(SIGINT, &sigaction_sigint, NULL))
+    {
+        perror("cannot handle SIGINT: sigaction(2) failed");
+        return 1;
+    }
+
     // Create and start incoming (read-only) clock
-    global.clock = clock_new(CLOCK_MODE_IN);
+    g.clock = clock_new(CLOCK_MODE_IN);
 
     // Create slave scheduler
     // This connects to the existing master scheduler
-    global.scheduler = scheduler_new(SCHEDULER_SIDE_SLAVE);
+    g.scheduler = scheduler_new(SCHEDULER_SIDE_SLAVE);
 
+    // This loop represents part of the operating system control
     while (1)
     {
         // Lock the scheduler
-        if (scheduler_lock(global.scheduler))
+        if (scheduler_lock(g.scheduler))
             return 1;
 
         // If this SUP is dispatched
-        if (scheduler_get_dispatch_proc(global.scheduler) == getpid())
+        // It is at this point that the SUP is considered to be running
+        if (scheduler_get_dispatch_proc(g.scheduler) == getpid())
         {
             //
             // Beginning Time
             //
 
             // Lock the clock
-            if (clock_lock(global.clock))
+            if (clock_lock(g.clock))
                 return 1;
 
             // Get latest time from clock
-            unsigned int start_nanos = clock_get_nanos(global.clock);
-            unsigned int start_seconds = clock_get_seconds(global.clock);
+            unsigned int start_nanos = clock_get_nanos(g.clock);
+            unsigned int start_seconds = clock_get_seconds(g.clock);
 
             // Unlock the clock
-            if (clock_unlock(global.clock))
+            if (clock_unlock(g.clock))
                 return 1;
+
+            // Absolute simulated beginning time
+            unsigned long start_time = start_nanos + start_seconds * 1000000000;
 
             printf("user proc %d: resume (sim time %ds, %dns)\n", getpid(), start_seconds, start_nanos);
 
@@ -77,8 +108,7 @@ int main(int argc, char* argv[])
             //  d. Run for some time and yield
             //
 
-            // Stopped here
-            // NOTE: Need to keep track of average waiting time for each queue
+            // TODO: Don't forget to keep track of times to calculate statistics and move priorities around
 
             switch (rand() % 4)
             {
@@ -86,7 +116,7 @@ int main(int argc, char* argv[])
                 // Terminate immediately
                 printf("user proc %d: rolled a 0: terminating immediately (sim time %ds, %dns)\n", getpid(),
                         start_seconds, start_nanos);
-                scheduler_unlock(global.scheduler);
+                scheduler_unlock(g.scheduler);
                 return 0;
             case 1:
                 // Terminate after time quantum
@@ -115,83 +145,40 @@ int main(int argc, char* argv[])
             //
 
             // Lock the clock
-            if (clock_lock(global.clock))
+            if (clock_lock(g.clock))
                 return 1;
 
             // Get latest time from clock
-            unsigned int stop_nanos = clock_get_nanos(global.clock);
-            unsigned int stop_seconds = clock_get_seconds(global.clock);
+            unsigned int stop_nanos = clock_get_nanos(g.clock);
+            unsigned int stop_seconds = clock_get_seconds(g.clock);
 
             // Unlock the clock
-            if (clock_unlock(global.clock))
+            if (clock_unlock(g.clock))
                 return 1;
 
+            // Absolute simulated ending time
+            unsigned long stop_time = stop_nanos + stop_seconds * 1000000000;
+
             printf("user proc %d: yield (sim time %ds, %dns)\n", getpid(), stop_seconds, stop_nanos);
+
+            // Yield control back to the system after next unlock
+            if (scheduler_yield(g.scheduler))
+                return 1;
+
+            printf("user proc %d: state is now READY\n", getpid());
+            printf("user proc %d: burst summary: %ldns cpu\n", getpid(), (stop_time - start_time));
         }
 
         fflush(stdout);
 
         // Unlock the scheduler
-        if (scheduler_unlock(global.scheduler))
+        if (scheduler_unlock(g.scheduler))
             return 1;
 
-        usleep(1);
+        if (g.interrupted)
+        {
+            printf("user proc %d: interrupted\n", getpid());
+            return 2;
+        }
     }
 }
-
-/*
-        // Lock the simulated clock
-        if (clock_lock(global.clock))
-            break;
-
-        // Get current simulated time
-        int now_nanos = clock_get_nanos(global.clock);
-        int now_seconds = clock_get_seconds(global.clock);
-
-        // Unlock the simulated clock
-        if (clock_unlock(global.clock))
-            break;
-
-        // If delay has elapsed
-        if (seconds_now > seconds_target || (seconds_now == seconds_target && nanos_now > nanos_target))
-        {
-            // Lock the scheduler
-            if (scheduler_lock(global.scheduler))
-                break;
-
-            // Redirected to log file
-            printf("child %d entered critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
-                    seconds_now, nanos_now);
-
-            // If there is no message waiting, we send our termination notice
-            if (!scheduler_test(global.scheduler))
-            {
-                // Send current time
-                scheduler_msg_s msg = { seconds_now, nanos_now };
-                scheduler_offer(global.scheduler, msg);
-
-                // Redirected to log file
-                printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
-                        seconds_now, nanos_now);
-
-                fflush(stdout);
-
-                // Unlock the scheduler
-                if (scheduler_unlock(global.scheduler))
-                    break;
-
-                // Exit normally
-                exit(0);
-            }
-
-            fflush(stdout);
-
-            // Redirected to log file
-            printf("child %d leaving critical section at real time %ld (%ds %dns sim time)\n", getpid(), time(NULL),
-                    seconds_now, nanos_now);
-
-            // Unlock the scheduler
-            if (scheduler_unlock(global.scheduler))
-                break;
-        }
- */

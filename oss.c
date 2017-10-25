@@ -10,12 +10,15 @@
 #include <string.h>
 #include <time.h>
 
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "clock.h"
 #include "scheduler.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
+
+// TODO: Current task: handling SIGCHLD and calling complete_death
 
 static struct
 {
@@ -30,40 +33,51 @@ static struct
 
     /** The master scheduler instance. */
     scheduler_s* scheduler;
-} global;
+
+    /** The number of spawned child processes. */
+    volatile sig_atomic_t num_children;
+
+    /** Nonzero once SIGINT received. */
+    volatile sig_atomic_t interrupted;
+} g;
 
 static void handle_exit()
 {
-    // Clean up IPC components
-    if (global.clock)
+    // Clean up IPC-heavy components
+    if (g.clock)
     {
-        clock_delete(global.clock);
+        clock_delete(g.clock);
     }
-    if (global.scheduler)
+    if (g.scheduler)
     {
-        scheduler_delete(global.scheduler);
-    }
-
-    // Close log file if it is open
-    if (global.log_file)
-    {
-        fclose(global.log_file);
+        scheduler_delete(g.scheduler);
     }
 
-    // The program is exiting, but this is The Right Way (TM)
-    if (global.log_file_path)
+    // Close log file
+    if (g.log_file)
     {
-        free(global.log_file_path);
+        fclose(g.log_file);
     }
+    if (g.log_file_path)
+    {
+        free(g.log_file_path);
+    }
+}
+
+static void handle_sigchld(int sig)
+{
+    g.num_children--;
+
+    // Obtain the zombie's pid
+    pid_t pid = wait(NULL);
+
+    printf("got death notice for %d\n", pid); // FIXME: Not safe
 }
 
 static void handle_sigint(int sig)
 {
-    fprintf(stderr, "execution interrupted\n");
-
-    // Exit the application with status 2
-    // The exit handler should take over just like normal
-    exit(2);
+    // Set interrupted flag
+    g.interrupted = 1;
 }
 
 static pid_t launch_child()
@@ -75,22 +89,22 @@ static pid_t launch_child()
 
         // Redirect child stderr and stdout to log file
         // This is a hack to allow logging from children without communicating the log fd
-        //dup2(fileno(global.log_file), STDERR_FILENO);
-        //dup2(fileno(global.log_file), STDOUT_FILENO);
+        //dup2(fileno(g.log_file), STDERR_FILENO);
+        //dup2(fileno(g.log_file), STDOUT_FILENO);
+        // TODO: Uncomment the above lines
 
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
         {
             perror("launch child failed (in child): execv(2) failed");
-            _Exit(1);
         }
 
-        // This should never happen
-        _Exit(42);
+        _Exit(1);
     }
     else if (child_pid > 0)
     {
         // Fork succeeded, now in parent
+        g.num_children++;
         return child_pid;
     }
     else
@@ -117,7 +131,10 @@ static void print_usage(FILE* dest, const char* executable_name)
 
 int main(int argc, char* argv[])
 {
-    global.log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
+    atexit(&handle_exit);
+    srand((unsigned int) time(NULL));
+
+    g.log_file_path = strdup(DEFAULT_LOG_FILE_PATH);
 
     // Handle command-line options
     int opt;
@@ -129,9 +146,9 @@ int main(int argc, char* argv[])
             print_help(stdout, argv[0]);
             return 0;
         case 'l':
-            free(global.log_file_path);
-            global.log_file_path = strdup(optarg);
-            if (!global.log_file_path)
+            free(g.log_file_path);
+            g.log_file_path = strdup(optarg);
+            if (!g.log_file_path)
             {
                 perror("global.log_file_path not allocated: strdup(3) failed");
                 return 1;
@@ -144,41 +161,47 @@ int main(int argc, char* argv[])
         }
     }
 
-    if (!global.log_file_path)
+    if (!g.log_file_path)
     {
         printf("global.log_file_path not allocated\n");
         return 1;
     }
 
     // Open log file for appending
-    global.log_file = fopen(global.log_file_path, "w");
-    if (!global.log_file)
+    g.log_file = fopen(g.log_file_path, "w");
+    if (!g.log_file)
     {
         perror("unable to open log file, so logging will not occur");
     }
 
-    // Register handlers for process exit and interrupt signal (^C at terminal)
-    atexit(&handle_exit);
+    // Register handler for SIGCHLD signal
+    struct sigaction sigaction_sigchld = {};
+    sigaction_sigchld.sa_handler = &handle_sigchld;
+    if (sigaction(SIGCHLD, &sigaction_sigchld, NULL))
+    {
+        perror("cannot handle SIGCHLD: sigaction(2) failed");
+        return 1;
+    }
+
+    // Register handler for SIGINT signal (^C at terminal)
     struct sigaction sigaction_sigint = {};
     sigaction_sigint.sa_handler = &handle_sigint;
     if (sigaction(SIGINT, &sigaction_sigint, NULL))
     {
-        perror("cannot handle SIGINT, so manual IPC cleanup may be needed: sigaction(2) failed");
+        perror("cannot handle SIGINT: sigaction(2) failed");
+        return 1;
     }
 
     // Create and start outgoing clock
-    global.clock = clock_new(CLOCK_MODE_OUT);
+    g.clock = clock_new(CLOCK_MODE_OUT);
 
     // Create master scheduler
-    global.scheduler = scheduler_new(SCHEDULER_SIDE_MASTER);
-
-    // Seed the RNG
-    srand((unsigned int) time(NULL));
+    g.scheduler = scheduler_new(SCHEDULER_SIDE_MASTER);
 
     while (1)
     {
         // Lock the clock
-        if (clock_lock(global.clock))
+        if (clock_lock(g.clock))
             return 1;
 
         // Generate a time between 1 and 1.000001 seconds (1s + [0, 1000ns])
@@ -187,22 +210,22 @@ int main(int argc, char* argv[])
         unsigned int ds = 1;
 
         // Advance the clock
-        clock_advance(global.clock, dn, ds);
+        clock_advance(g.clock, dn, ds);
 
         // Get latest time from clock
-        unsigned int now_nanos = clock_get_nanos(global.clock);
-        unsigned int now_seconds = clock_get_seconds(global.clock);
+        unsigned int now_nanos = clock_get_nanos(g.clock);
+        unsigned int now_seconds = clock_get_seconds(g.clock);
 
         // Unlock the clock
-        if (clock_unlock(global.clock))
+        if (clock_unlock(g.clock))
             return 1;
 
         // Lock the scheduler
-        if (scheduler_lock(global.scheduler))
+        if (scheduler_lock(g.scheduler))
             return 1;
 
         // If resources are available for another process to be spawned
-        if (scheduler_m_available(global.scheduler))
+        if (scheduler_available(g.scheduler))
         {
             // Launch a child
             pid_t child_pid = launch_child();
@@ -211,37 +234,53 @@ int main(int argc, char* argv[])
             if (child_pid == -1)
             {
                 // Unlock the scheduler and die
-                scheduler_unlock(global.scheduler);
+                scheduler_unlock(g.scheduler);
                 return 1;
             }
 
             // Complete spawning the child process
             // This allocates the process control block and whatnot
             // This does not dispatch the process, however
-            if (scheduler_m_complete_spawn(global.scheduler, child_pid))
+            if (scheduler_complete_spawn(g.scheduler, child_pid))
             {
                 // Unlock the scheduler and die
-                scheduler_unlock(global.scheduler);
+                scheduler_unlock(g.scheduler);
                 return 1;
             }
 
             printf("spawned user proc %d\n", child_pid);
         }
 
-        // If a process is not scheduled, schedule one
-        // This will select one ready process and dispatch it
-        if (scheduler_get_dispatch_proc(global.scheduler) == -1)
+        // If a process is not currently scheduled
+        if (scheduler_get_dispatch_proc(g.scheduler) == -1)
         {
-            scheduler_m_select_and_schedule(global.scheduler);
+            // Select and schedule (dispatch) the next SUP
+            pid_t pid = scheduler_select_and_schedule(g.scheduler);
+
+            printf("dispatched user proc %d\n", pid);
+            printf("user proc %d: state is now RUN\n", pid);
         }
 
         fflush(stdout);
 
         // Unlock the scheduler
-        if (scheduler_unlock(global.scheduler))
+        if (scheduler_unlock(g.scheduler))
             return 1;
+
+        if (g.interrupted)
+        {
+            printf("execution interrupted\n");
+            break;
+        }
 
         sleep(1); // TODO: Does this limit rate enough to provide approximately 1 spawn on average?
         // This also lets the simulated clock somewhat sync up to real-ish time for a bit
+    }
+
+    // Wait for remaining children to die
+    while (g.num_children > 0)
+    {
+        killpg(getpgrp(), SIGINT);
+        usleep(1000);
     }
 }

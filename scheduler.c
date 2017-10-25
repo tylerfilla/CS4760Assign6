@@ -11,6 +11,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
+#include <unistd.h>
 
 #include "scheduler.h"
 
@@ -552,7 +553,7 @@ int scheduler_unlock(scheduler_s* self)
     return 0;
 }
 
-int scheduler_m_available(scheduler_s* self)
+int scheduler_available(scheduler_s* self)
 {
     // Only run on master side
     if (self->side != SCHEDULER_SIDE_MASTER)
@@ -561,7 +562,7 @@ int scheduler_m_available(scheduler_s* self)
     return self->__mem->num_procs < MAX_USER_PROCS;
 }
 
-int scheduler_m_complete_spawn(scheduler_s* self, pid_t pid)
+int scheduler_complete_spawn(scheduler_s* self, pid_t pid)
 {
     // Only run on master side
     if (self->side != SCHEDULER_SIDE_MASTER)
@@ -578,7 +579,7 @@ int scheduler_m_complete_spawn(scheduler_s* self, pid_t pid)
     return 0;
 }
 
-int scheduler_m_complete_death(scheduler_s* self, pid_t pid)
+int scheduler_complete_death(scheduler_s* self, pid_t pid)
 {
     // Only run on master side
     if (self->side != SCHEDULER_SIDE_MASTER)
@@ -592,7 +593,7 @@ int scheduler_m_complete_death(scheduler_s* self, pid_t pid)
     return 0;
 }
 
-pid_t scheduler_m_select_and_schedule(scheduler_s* self)
+pid_t scheduler_select_and_schedule(scheduler_s* self)
 {
     // Only run on master side
     if (self->side != SCHEDULER_SIDE_MASTER)
@@ -631,6 +632,9 @@ pid_t scheduler_m_select_and_schedule(scheduler_s* self)
     // Get PCB of process
     __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
 
+    // Set process state to RUN
+    block->state = STATE_RUN;
+
     // The time quantum allocated for this process
     unsigned int quantum = BASE_TIME_QUANTUM_NANOS;
 
@@ -648,9 +652,6 @@ pid_t scheduler_m_select_and_schedule(scheduler_s* self)
         break;
     case PRIO_LOW:
         quantum /= QUANTUM_DIVISOR_PRIO_LOW;
-        break;
-    default:
-        // ???
         break;
     }
 
@@ -670,4 +671,33 @@ pid_t scheduler_get_dispatch_proc(scheduler_s* self)
 unsigned int scheduler_get_dispatch_quantum(scheduler_s* self)
 {
     return self->__mem->dispatch_quantum;
+}
+
+int scheduler_yield(scheduler_s* self)
+{
+    // Only run on slave side
+    if (self->side != SCHEDULER_SIDE_SLAVE)
+        return 1;
+
+    pid_t pid = getpid();
+
+    // Make sure pids match
+    if (self->__mem->dispatch_proc != pid)
+        return 1;
+
+    // Transition SUP from RUN to READY
+    __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
+    block->state = STATE_READY;
+
+    // TODO: Re-evaluate priority of SUP
+    int prio = block->prio;
+
+    // Enqueue the SUP as READY with the new priority
+    scheduler_ready_enqueue(self, pid, prio);
+
+    // Signal master scheduler that previously dispatched process has yielded
+    // After the slave unlocks the scheduler, the CPU will be considered idle
+    self->__mem->dispatch_proc = -1;
+
+    return 0;
 }
