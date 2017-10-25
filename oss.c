@@ -228,6 +228,18 @@ int main(int argc, char* argv[])
             // If resources are available for another process to be spawned
             if (scheduler_available(g.scheduler))
             {
+                // Lock the clock
+                if (clock_lock(g.clock))
+                    return 1;
+
+                // Get latest time from clock
+                unsigned int spawn_nanos = clock_get_nanos(g.clock);
+                unsigned int spawn_seconds = clock_get_seconds(g.clock);
+
+                // Unlock the clock
+                if (clock_unlock(g.clock))
+                    return 1;
+
                 // Launch a child
                 pid_t child_pid = launch_child();
 
@@ -242,14 +254,14 @@ int main(int argc, char* argv[])
                 // Complete spawning the child process
                 // This allocates the process control block and whatnot
                 // This does not dispatch the process, however
-                if (scheduler_complete_spawn(g.scheduler, child_pid))
+                if (scheduler_complete_spawn(g.scheduler, child_pid, spawn_nanos, spawn_seconds))
                 {
                     // Unlock the scheduler and die
                     scheduler_unlock(g.scheduler);
                     return 1;
                 }
 
-                printf("spawned user proc %d (sim time %ds, %dns)\n", child_pid, now_seconds, now_nanos);
+                printf("spawned user proc %d (sim time %ds, %dns)\n", child_pid, spawn_seconds, spawn_nanos);
             }
 
             // Schedule next process spawn
@@ -279,11 +291,14 @@ int main(int argc, char* argv[])
             // TODO: This is part of CPU idle time
             if (pid == -1)
             {
+                printf("number of processes maxed out\n");
+
                 // Unlock the scheduler
                 if (scheduler_unlock(g.scheduler))
                     return 1;
 
                 // Try again later
+                sleep(1);
                 continue;
             }
 
@@ -305,13 +320,4 @@ int main(int argc, char* argv[])
 
         sleep(1);
     }
-
-    /*
-    // Wait for remaining children to die
-    while (wait(NULL) > 0)
-    {
-        killpg(getpgrp(), SIGINT);
-        usleep(1000);
-    }
-     */
 }

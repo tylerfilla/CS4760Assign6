@@ -100,9 +100,11 @@ int scheduler_available(scheduler_s* scheduler);
  *
  * @param scheduler The scheduler instance
  * @param pid The new process's pid
+ * @param time_nanos The nanosecond part of the simulated time
+ * @param time_seconds The second part of the simulated time
  * @return Zero on success, otherwise nonzero
  */
-int scheduler_complete_spawn(scheduler_s* scheduler, pid_t pid);
+int scheduler_complete_spawn(scheduler_s* scheduler, pid_t pid, unsigned int time_nanos, unsigned int time_seconds);
 
 /**
  * Complete the death of an old SUP. This releases resources for it.
@@ -143,8 +145,11 @@ unsigned int scheduler_get_dispatch_quantum(scheduler_s* scheduler);
  * On a slave-side scheduler instance, indicate a yield of control back to the system.
  *
  * @param scheduler The scheduler instance
+ * @param time_nanos The nanosecond part of the current simulated time
+ * @param time_seconds The second part of the current simulated time
+ * @param cpu_time The simulated time taken, in nanoseconds, by the last burst
  * @return Zero on success, otherwise nonzero
  */
-int scheduler_yield(scheduler_s* scheduler);
+int scheduler_yield(scheduler_s* scheduler, unsigned int time_nanos, unsigned int time_seconds, unsigned long cpu_time);
 
 #endif // #ifndef SCHEDULER_H

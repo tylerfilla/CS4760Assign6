@@ -60,17 +60,23 @@ typedef struct
     /** The process priority. */
     int prio;
 
-    /** The second part of the simulated time at which the process spawned. */
-    unsigned int spawn_time_seconds;
-
     /** The nanosecond part of the simulated time at which the process spawned. */
     unsigned int spawn_time_nanos;
 
+    /** The second part of the simulated time at which the process spawned. */
+    unsigned int spawn_time_seconds;
+
     /** The total simulated CPU time this process has accumulated (in nanoseconds). */
-    unsigned int total_cpu_time;
+    unsigned long total_cpu_time;
 
     /** The total simulated wait time this process has accumulated (in nanoseconds). */
-    unsigned int total_wait_time;
+    unsigned long total_wait_time;
+
+    /** The nanosecond part of the simulated time at which the last burst ended. */
+    unsigned int last_burst_end_nanos;
+
+    /** The second part of the simulated time at which the last burst ended. */
+    unsigned int last_burst_end_seconds;
 } __process_ctl_block_s;
 
 /**
@@ -584,14 +590,23 @@ int scheduler_available(scheduler_s* self)
     return self->__mem->num_procs < MAX_USER_PROCS;
 }
 
-int scheduler_complete_spawn(scheduler_s* self, pid_t pid)
+int scheduler_complete_spawn(scheduler_s* self, pid_t pid, unsigned int time_nanos, unsigned int time_seconds)
 {
     // Only run on master side
     if (self->side != SCHEDULER_SIDE_MASTER)
         return 1;
 
     // Create process control block
-    scheduler_create_pcb(self, pid);
+    __process_ctl_block_s* block = scheduler_create_pcb(self, pid);
+
+    block->spawn_time_nanos = time_nanos;
+    block->spawn_time_seconds = time_seconds;
+
+    // Hack: The process hasn't used any CPU time yet
+    // I just put this here to account for the time before the process spawned
+    // Without this, every process's wait time will include time before spawning
+    block->last_burst_end_nanos = time_nanos;
+    block->last_burst_end_seconds = time_seconds;
 
     // Start the process with high priority
     scheduler_ready_enqueue(self, pid, PRIO_HIGH);
@@ -713,7 +728,7 @@ unsigned int scheduler_get_dispatch_quantum(scheduler_s* self)
     return self->__mem->dispatch_quantum;
 }
 
-int scheduler_yield(scheduler_s* self)
+int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int time_seconds, unsigned long cpu_time)
 {
     // Only run on slave side
     if (self->side != SCHEDULER_SIDE_SLAVE)
@@ -725,9 +740,24 @@ int scheduler_yield(scheduler_s* self)
     if (self->__mem->dispatch_proc != pid)
         return 1;
 
-    // Transition SUP from RUN to READY
     __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
+
+    unsigned long abs_time = (unsigned long) time_nanos + (unsigned long) time_seconds * 1000000000l;
+    unsigned long last_burst_end_time = (unsigned long) block->last_burst_end_nanos
+            + (unsigned long) block->last_burst_end_seconds * 1000000000l;
+
+    unsigned long wait_time = (abs_time - cpu_time) - last_burst_end_time;
+
     block->state = STATE_READY;
+
+    block->total_cpu_time += cpu_time;
+    block->total_wait_time += wait_time;
+
+    block->last_burst_end_nanos = time_nanos;
+    block->last_burst_end_seconds = time_seconds;
+
+    printf(" => last cpu:  %ldns,  last wait: %ldns\n", cpu_time, wait_time);
+    printf(" => total cpu: %ldns, total wait: %ldns\n", block->total_cpu_time, block->total_wait_time);
 
     // TODO: Re-evaluate priority of SUP
     int prio = block->prio;

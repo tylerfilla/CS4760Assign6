@@ -66,6 +66,8 @@ int main(int argc, char* argv[])
     // This connects to the existing master scheduler
     g.scheduler = scheduler_new(SCHEDULER_SIDE_SLAVE);
 
+    int terminate = 0;
+
     // This loop represents part of the operating system control
     while (1)
     {
@@ -77,6 +79,10 @@ int main(int argc, char* argv[])
         // It is at this point that the SUP is considered to be running
         if (scheduler_get_dispatch_proc(g.scheduler) == getpid())
         {
+            // Unlock the scheduler
+            if (scheduler_unlock(g.scheduler))
+                return 1;
+
             //
             // Beginning Time
             //
@@ -94,7 +100,7 @@ int main(int argc, char* argv[])
                 return 1;
 
             // Absolute simulated beginning time
-            unsigned long start_time = start_nanos + start_seconds * 1000000000;
+            unsigned long start_time = (unsigned long) start_nanos + (unsigned long) start_seconds * 1000000000l;
 
             printf("user proc %d: resume (sim time %ds, %dns)\n", getpid(), start_seconds, start_nanos);
 
@@ -114,30 +120,32 @@ int main(int argc, char* argv[])
             {
             case 0:
                 // Terminate immediately
-                printf("user proc %d: rolled a 0: terminating immediately (sim time %ds, %dns)\n", getpid(),
-                        start_seconds, start_nanos);
-                scheduler_unlock(g.scheduler);
-                return 0;
+                printf("user proc %d: rolled a 0: terminating immediately\n", getpid());
+                terminate = 1;
+                break;
             case 1:
                 // Terminate after time quantum
-                printf("user proc %d: rolled a 1: terminating after time quantum (sim time %ds, %dns)\n", getpid(),
-                        start_seconds, start_nanos);
-                printf("user proc %d: 1 not implemented! Yield and retry...\n", getpid());
+                printf("user proc %d: rolled a 1: terminating after time quantum\n", getpid());
+                printf("user proc %d: 1 NOT YET IMPLEMENTED! Yield and retry...\n", getpid());
                 break;
             case 2:
                 // Block on a simulated I/O event
-                printf("user proc %d: rolled a 2: waiting on an event (sim time %ds, %dns)\n", getpid(), start_seconds,
-                        start_nanos);
-                printf("user proc %d: 2 not implemented! Yield and retry...\n", getpid());
+                printf("user proc %d: rolled a 2: waiting on an event\n", getpid());
+                printf("user proc %d: 2 NOT YET IMPLEMENTED! Yield and retry...\n", getpid());
                 break;
             case 3:
                 // Run for some time and yield
-                printf("user proc %d: rolled a 3: running for some time interval (sim time %ds, %dns)\n", getpid(),
-                        start_seconds, start_nanos);
-                printf("user proc %d: 3 not implemented! Yield and retry...\n", getpid());
+                printf("user proc %d: rolled a 3: running for some time interval\n", getpid());
+                printf("user proc %d: 3 NOT YET IMPLEMENTED! Yield and retry...\n", getpid());
                 break;
             default:
                 break;
+            }
+
+            // FIXME
+            if (!terminate)
+            {
+                sleep(1);
             }
 
             //
@@ -157,16 +165,29 @@ int main(int argc, char* argv[])
                 return 1;
 
             // Absolute simulated ending time
-            unsigned long stop_time = stop_nanos + stop_seconds * 1000000000;
+            unsigned long stop_time = (unsigned long) stop_nanos + (unsigned long) stop_seconds * 1000000000l;
+
+            // CPU burst length
+            unsigned long cpu_time = stop_time - start_time;
+
+            // Lock the scheduler
+            if (scheduler_lock(g.scheduler))
+                return 1;
 
             printf("user proc %d: yield (sim time %ds, %dns)\n", getpid(), stop_seconds, stop_nanos);
 
             // Yield control back to the system after next unlock
-            if (scheduler_yield(g.scheduler))
+            // Timing details are provided to the scheduler so that it can reevaluate process priority
+            // In a perfect world, this wouldn't be controllable by the child
+            if (scheduler_yield(g.scheduler, stop_nanos, stop_seconds, cpu_time))
                 return 1;
 
-            printf("user proc %d: summary: used %ldns cpu time\n", getpid(), (stop_time - start_time));
-            printf("user proc %d: state is now READY\n", getpid());
+            printf("user proc %d: summary: used %ldns cpu time\n", getpid(), cpu_time);
+
+            if (!terminate)
+            {
+                printf("user proc %d: state is now READY\n", getpid());
+            }
         }
 
         fflush(stdout);
@@ -174,6 +195,9 @@ int main(int argc, char* argv[])
         // Unlock the scheduler
         if (scheduler_unlock(g.scheduler))
             return 1;
+
+        if (terminate)
+            return 0;
 
         if (g.interrupted)
         {

@@ -25,6 +25,10 @@ Difference between child process and SUP: former has a small part that represent
 This simulation is internally more similar to a cooperative multitasking system, but the above difference helps us use
     cooperation to simulate preemption.
 
+Note: I use circular buffers to implement the ready queues.
+
+Don't forget to remove -g.
+
 Directory Structure
 ===================
 
