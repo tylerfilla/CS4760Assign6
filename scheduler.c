@@ -877,3 +877,7 @@ int scheduler_wait(scheduler_s* self)
 
     return 0;
 }
+
+void scheduler_dump_summary(scheduler_s* self, FILE* dest)
+{
+}

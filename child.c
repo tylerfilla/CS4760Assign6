@@ -283,7 +283,10 @@ int main(int argc, char* argv[])
             if (scheduler_lock(g.scheduler))
                 return 1;
 
-            printf("user proc %d: yield (sim time %ds, %dns)\n", getpid(), stop_seconds, stop_nanos);
+            if (!suppress)
+            {
+                printf("user proc %d: yield (sim time %ds, %dns)\n", getpid(), stop_seconds, stop_nanos);
+            }
 
             // Yield control back to the system after next unlock
             // Timing details are provided to the scheduler so that it can reevaluate process priority

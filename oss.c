@@ -85,9 +85,8 @@ static pid_t launch_child()
 
         // Redirect child stderr and stdout to log file
         // This is a hack to allow logging from children without communicating the log fd
-        //dup2(fileno(g.log_file), STDERR_FILENO);
-        //dup2(fileno(g.log_file), STDOUT_FILENO);
-        // TODO: Uncomment the above lines
+        dup2(fileno(g.log_file), STDERR_FILENO);
+        dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
@@ -158,7 +157,7 @@ int main(int argc, char* argv[])
 
     if (!g.log_file_path)
     {
-        printf("global.log_file_path not allocated\n");
+        fprintf(stderr, "global.log_file_path not allocated\n");
         return 1;
     }
 
@@ -168,6 +167,9 @@ int main(int argc, char* argv[])
     {
         perror("unable to open log file, so logging will not occur");
     }
+
+    // Redirect stdout to the log file
+    dup2(fileno(g.log_file), STDOUT_FILENO);
 
     // Register handler for SIGCHLD signal
     struct sigaction sigaction_sigchld = {};
@@ -192,6 +194,18 @@ int main(int argc, char* argv[])
 
     // Create master scheduler
     g.scheduler = scheduler_new(SCHEDULER_SIDE_MASTER);
+
+    // Lock the clock
+    if (clock_lock(g.clock))
+        return 1;
+
+    // Get starting time
+    unsigned int start_nanos = clock_get_nanos(g.clock);
+    unsigned int start_seconds = clock_get_seconds(g.clock);
+
+    // Unlock the clock
+    if (clock_unlock(g.clock))
+        return 1;
 
     unsigned int next_proc_nanos = 0;
     unsigned int next_proc_seconds = 0;
@@ -261,7 +275,8 @@ int main(int argc, char* argv[])
                     return 1;
                 }
 
-                printf("spawned user proc %d (sim time %ds, %dns)\n", child_pid, spawn_seconds, spawn_nanos);
+                fprintf(g.log_file, "spawned user proc %d (sim time %ds, %dns)\n", child_pid, spawn_seconds,
+                        spawn_nanos);
             }
 
             // Schedule next process spawn
@@ -280,7 +295,7 @@ int main(int argc, char* argv[])
             // Need to handle death
             scheduler_complete_death(g.scheduler, pid);
 
-            printf("user proc %d: dead\n", pid);
+            fprintf(g.log_file, "user proc %d: dead\n", pid);
         }
 
         // If a process is not currently scheduled
@@ -302,7 +317,7 @@ int main(int argc, char* argv[])
                 continue;
             }
 
-            printf("dispatched user proc %d (sim time %ds, %dns)\n", pid, now_seconds, now_nanos);
+            fprintf(g.log_file, "dispatched user proc %d (sim time %ds, %dns)\n", pid, now_seconds, now_nanos);
         }
 
         // Unlock the scheduler
@@ -311,11 +326,23 @@ int main(int argc, char* argv[])
 
         if (g.interrupted)
         {
-            fprintf(stderr, "execution interrupted\n");
+            // Lock the clock
+            if (clock_lock(g.clock))
+                return 1;
+
+            // Get latest time from clock
+            unsigned int stop_nanos = clock_get_nanos(g.clock);
+            unsigned int stop_seconds = clock_get_seconds(g.clock);
+
+            // Unlock the clock
+            if (clock_unlock(g.clock))
+                return 1;
+
+            fprintf(stderr, "\n--- last run statistics ---\n");
+            fprintf(stderr, "stop time: %ds, %dns\n", stop_seconds, stop_nanos);
+
             break;
         }
-
-        fflush(stdout);
 
         usleep(100000);
     }

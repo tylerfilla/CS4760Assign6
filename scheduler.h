@@ -161,4 +161,12 @@ int scheduler_yield(scheduler_s* scheduler, unsigned int time_nanos, unsigned in
  */
 int scheduler_wait(scheduler_s* scheduler);
 
+/**
+ * Dump a human-readable summary of scheduler state to the given file.
+ *
+ * @param scheduler The scheduler instance
+ * @param dest The destination file
+ */
+void scheduler_dump_summary(scheduler_s* scheduler, FILE* dest);
+
 #endif // #ifndef SCHEDULER_H
