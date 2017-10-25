@@ -87,8 +87,6 @@ int main(int argc, char* argv[])
             if (scheduler_unlock(g.scheduler))
                 return 1;
 
-            printf("my time quantum: %d\n", quantum);
-
             //
             // Beginning Time
             //
@@ -120,9 +118,10 @@ int main(int argc, char* argv[])
             //  d. Run for some time and yield
             //
 
-            // TODO: Don't forget to keep track of times to calculate statistics and move priorities around
+            // Time spent waiting on an event
+            unsigned long evt_duration_time = 0;
 
-            switch (rand() % 4)
+            switch (2)//rand() % 4)
             {
             case 0:
                 // Terminate immediately
@@ -163,19 +162,41 @@ int main(int argc, char* argv[])
                 // To do so will require two new scheduler functions and a new queue: scheduler_wait and scheduler_unwait
                 printf("user proc %d: rolled a 2: waiting on an event\n", getpid());
                 {
-                    printf("user proc %d: state is now WAIT\n", getpid());
-
                     // Randomize duration of "event"
                     unsigned int evt_duration_nanos = (unsigned int) (rand() % 1000);
                     unsigned int evt_duration_seconds = (unsigned int) (rand() % 5);
+
+                    evt_duration_time = (unsigned long) evt_duration_nanos
+                            + (unsigned long) evt_duration_seconds * 1000000000l;
 
                     // Compute end of event
                     unsigned int evt_done_nanos = start_nanos + evt_duration_nanos;
                     unsigned int evt_done_seconds = start_seconds + evt_duration_seconds;
 
                     // Absolute event end time
-                    unsigned long evt_done_time =
-                            (unsigned long) evt_done_nanos + (unsigned long) evt_done_seconds * 1000000000l;
+                    unsigned long evt_done_time = (unsigned long) evt_done_nanos
+                            + (unsigned long) evt_done_seconds * 1000000000l;
+
+                    printf("user proc %d: info: event will complete after %ldns\n", getpid(), evt_duration_time);
+
+                    // Put SUP into WAIT
+                    printf("about to lock before waiting: %d\n", getpid());
+                    if (scheduler_lock(g.scheduler)) // possibly sticking here
+                        return 1;
+                    printf("locked, about to wait: %d\n", getpid());
+                    if (scheduler_wait(g.scheduler))
+                        return 1;
+                    printf("waiting, about to unlock: %d\n", getpid());
+                    if (scheduler_unlock(g.scheduler))
+                        return 1;
+                    printf("unlocked after waiting: %d\n", getpid());
+
+                    //
+                    // This SUP is now considered to be in the WAIT state. It may continue to run as a real process on
+                    // the system, but the corresponding SUP will not account for any time taken. This case only sets a
+                    // time in the future to resume and physically waits for it, which shouldn't be accounted for by
+                    // definition in the assignment. Another SUP should be scheduled at this time.
+                    //
 
                     while (1)
                     {
@@ -201,7 +222,7 @@ int main(int argc, char* argv[])
                         usleep(100);
                     }
 
-                    printf("user proc %d: state is now READY\n", getpid());
+                    printf("user proc %d: info: event has occurred\n", getpid());
                     suppress = 1;
                 }
                 break;
@@ -211,7 +232,7 @@ int main(int argc, char* argv[])
                 {
                     unsigned int quantum_fraction = quantum / (1 + rand() % 99);
 
-                    printf("user proc %d: info: running for %dns\n", getpid(), quantum_fraction);
+                    printf("user proc %d: info: will get preempted after %dns\n", getpid(), quantum_fraction);
 
                     while (1)
                     {
@@ -262,7 +283,7 @@ int main(int argc, char* argv[])
             unsigned long stop_time = (unsigned long) stop_nanos + (unsigned long) stop_seconds * 1000000000l;
 
             // CPU burst length
-            unsigned long cpu_time = stop_time - start_time;
+            unsigned long cpu_time = stop_time - start_time - evt_duration_time;
 
             // Lock the scheduler
             if (scheduler_lock(g.scheduler))
@@ -273,17 +294,13 @@ int main(int argc, char* argv[])
             // Yield control back to the system after next unlock
             // Timing details are provided to the scheduler so that it can reevaluate process priority
             // In a perfect world, this wouldn't be controllable by the child
+            // This is always done, regardless of the child's fate
             if (scheduler_yield(g.scheduler, stop_nanos, stop_seconds, cpu_time))
                 return 1;
 
             if (!suppress)
             {
                 printf("user proc %d: summary: used %ldns cpu time\n", getpid(), cpu_time);
-
-                if (!terminate)
-                {
-                    printf("user proc %d: state is now READY\n", getpid());
-                }
             }
         }
 

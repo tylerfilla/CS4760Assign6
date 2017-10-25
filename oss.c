@@ -279,6 +279,8 @@ int main(int argc, char* argv[])
 
             // Need to handle death
             scheduler_complete_death(g.scheduler, pid);
+
+            printf("user proc %d: dead\n", pid);
         }
 
         // If a process is not currently scheduled
@@ -291,8 +293,6 @@ int main(int argc, char* argv[])
             // TODO: This is part of CPU idle time
             if (pid == -1)
             {
-                printf("number of processes maxed out\n");
-
                 // Unlock the scheduler
                 if (scheduler_unlock(g.scheduler))
                     return 1;
@@ -303,7 +303,6 @@ int main(int argc, char* argv[])
             }
 
             printf("dispatched user proc %d (sim time %ds, %dns)\n", pid, now_seconds, now_nanos);
-            printf("user proc %d: state is now RUN\n", pid);
         }
 
         // Unlock the scheduler

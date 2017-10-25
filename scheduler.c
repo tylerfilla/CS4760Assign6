@@ -19,22 +19,22 @@
 /**
  * The constant coefficient alpha used in scheduling.
  */
-#define MULTI_LEVEL_ALPHA 1
+#define MULTI_LEVEL_ALPHA 2
 
 /**
  * The wait time transition threshold between priorities 1 and 2 in simulated nanoseconds.
  */
-#define TRANSITION_TSHLD_A 1000000000
+#define TRANSITION_TSHLD_A 1250000000
 
 /**
  * The constant coefficient beta used in scheduling.
  */
-#define MULTI_LEVEL_BETA 2
+#define MULTI_LEVEL_BETA 3
 
 /**
  * The wait time transition threshold between priorities 2 and 3 in simulated nanoseconds.
  */
-#define TRANSITION_TSHLD_B 1100000000
+#define TRANSITION_TSHLD_B 1500000000
 
 /**
  * The base time quantum before priority is taken into account.
@@ -671,6 +671,7 @@ int scheduler_complete_spawn(scheduler_s* self, pid_t pid, unsigned int time_nan
 
     self->__mem->num_procs++;
 
+    /*
     for (int q = 0; q < 3; ++q)
     {
         printf("queue %d (head: %d, tail: %d, length: %d): ", q, self->__mem->ready_queues[q].idx_head,
@@ -682,6 +683,7 @@ int scheduler_complete_spawn(scheduler_s* self, pid_t pid, unsigned int time_nan
         printf("\n");
         printf(" -> avg wait: %ld\n", scheduler_ready_wait_avg(self, q));
     }
+    */
 
     return 0;
 }
@@ -754,6 +756,8 @@ pid_t scheduler_select_and_schedule(scheduler_s* self)
     // Set process state to RUN
     block->state = STATE_RUN;
 
+    printf("user proc %d: state is now RUN\n", pid);
+
     // The time quantum allocated for this process
     unsigned int quantum = BASE_TIME_QUANTUM_NANOS;
 
@@ -800,11 +804,9 @@ int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int tim
 
     pid_t pid = getpid();
 
-    // Make sure pids match
-    if (self->__mem->dispatch_proc != pid)
-        return 1;
-
     __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
+
+    int last_state = block->state;
 
     unsigned long abs_time = (unsigned long) time_nanos + (unsigned long) time_seconds * 1000000000l;
     unsigned long last_burst_end_time = (unsigned long) block->last_burst_end_nanos
@@ -814,14 +816,19 @@ int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int tim
 
     block->state = STATE_READY;
 
+    printf("user proc %d: state is now READY\n", getpid());
+
     block->total_cpu_time += cpu_time;
     block->total_wait_time += wait_time;
 
-    block->last_burst_end_nanos = time_nanos;
-    block->last_burst_end_seconds = time_seconds;
+    if (last_state == STATE_RUN)
+    {
+        block->last_burst_end_nanos = time_nanos;
+        block->last_burst_end_seconds = time_seconds;
+    }
 
-    printf(" => last cpu:  %ldns,  last wait: %ldns\n", cpu_time, wait_time);
-    printf(" => total cpu: %ldns, total wait: %ldns\n", block->total_cpu_time, block->total_wait_time);
+    //printf(" => last cpu:  %ldns,  last wait: %ldns\n", cpu_time, wait_time);
+    //printf(" => total cpu: %ldns, total wait: %ldns\n", block->total_cpu_time, block->total_wait_time);
 
     int prio = block->prio;
 
@@ -829,13 +836,13 @@ int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int tim
     {
         // Penalize process to medium priority
         prio = PRIO_MED;
-        printf("child process %d: dropped to priority MED\n", pid);
+        printf("user proc %d: dropped to priority MED (queue 1)\n", pid);
     }
     else if (wait_time > TRANSITION_TSHLD_B && wait_time > MULTI_LEVEL_BETA * scheduler_ready_wait_avg(self, PRIO_LOW))
     {
         // Penalize process to low priority
         prio = PRIO_LOW;
-        printf("child process %d: dropped to priority LOW\n", pid);
+        printf("user proc %d: dropped to priority LOW (queue 2)\n", pid);
     }
 
     block->prio = prio;
@@ -845,6 +852,32 @@ int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int tim
 
     // Signal master scheduler that previously dispatched process has yielded
     // After the slave unlocks the scheduler, the CPU will be considered idle
+    self->__mem->dispatch_proc = -1;
+
+    return 0;
+}
+
+int scheduler_wait(scheduler_s* self)
+{
+    // Only run on slave side
+    if (self->side != SCHEDULER_SIDE_SLAVE)
+        return 1;
+
+    pid_t pid = getpid();
+
+    // Make sure pids match
+    //if (self->__mem->dispatch_proc != pid)
+    //    return 1;
+    // Is this even needed?
+
+    // Put SUP into WAIT state
+    __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
+    block->state = STATE_WAIT;
+
+    printf("user proc %d: state is now WAIT\n", getpid());
+
+    // Allow another SUP to run while this one waits
+    // This is a hack, as I didn't build in a proper wait system from the beginning
     self->__mem->dispatch_proc = -1;
 
     return 0;

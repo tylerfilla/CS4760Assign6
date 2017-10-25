@@ -142,7 +142,8 @@ pid_t scheduler_get_dispatch_proc(scheduler_s* scheduler);
 unsigned int scheduler_get_dispatch_quantum(scheduler_s* scheduler);
 
 /**
- * On a slave-side scheduler instance, indicate a yield of control back to the system.
+ * On a slave-side scheduler instance, indicate a yield of control back to the system. Also useful for indicating when
+ * a waited-on event has finished.
  *
  * @param scheduler The scheduler instance
  * @param time_nanos The nanosecond part of the current simulated time
@@ -151,5 +152,13 @@ unsigned int scheduler_get_dispatch_quantum(scheduler_s* scheduler);
  * @return Zero on success, otherwise nonzero
  */
 int scheduler_yield(scheduler_s* scheduler, unsigned int time_nanos, unsigned int time_seconds, unsigned long cpu_time);
+
+/**
+ * On a slave-side scheduler instance, indicate the SUP is waiting on an event.
+ *
+ * @param scheduler The scheduler instance
+ * @return Zero on success, otherwise nonzero
+ */
+int scheduler_wait(scheduler_s* scheduler);
 
 #endif // #ifndef SCHEDULER_H
