@@ -228,6 +228,25 @@ static pid_t scheduler_ready_dequeue(scheduler_s* self, int prio)
 }
 
 /**
+ * Remove a SUP's pid from the ready queue with the given priority.
+ */
+static void scheduler_ready_remove(scheduler_s* self, pid_t pid, int prio)
+{
+    // This is a very inefficient hack
+    // Take out all pids and put back uninteresting ones, ouch...
+    for (int p = 0; p < self->__mem->ready_queues[prio].length; ++p)
+    {
+        pid_t p_pid = scheduler_ready_dequeue(self, prio);
+
+        // Skip matching pid
+        if (p_pid == pid)
+            continue;
+
+        scheduler_ready_enqueue(self, p_pid, prio);
+    }
+}
+
+/**
  * Open a master side scheduler.
  */
 static int scheduler_open_master(scheduler_s* self)
@@ -634,6 +653,11 @@ int scheduler_complete_death(scheduler_s* self, pid_t pid)
         return 1;
 
     // TODO: Add process's stats to global stats for final readout
+
+    // Remove pid from ready queue
+    __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
+    int prio = block->prio;
+    scheduler_ready_remove(self, pid, prio);
 
     // Destroy process control block
     scheduler_destroy_pcb(self, pid);
