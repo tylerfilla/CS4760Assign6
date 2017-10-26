@@ -35,11 +35,35 @@ static struct
     /** Nonzero once SIGINT received. */
     volatile sig_atomic_t interrupted;
 
+    /** The pid of the last dead process. */
     volatile sig_atomic_t dead_proc;
 } g;
 
 static void handle_exit()
 {
+    // Get stop time
+    unsigned int stop_nanos = 0;
+    unsigned int stop_seconds = 0;
+    if (clock_lock(g.clock) == 0)
+    {
+        // Get stop time
+        stop_nanos = clock_get_nanos(g.clock);
+        stop_seconds = clock_get_seconds(g.clock);
+
+        // Unlock the clock
+        clock_unlock(g.clock);
+    }
+
+    if (g.interrupted)
+    {
+        fprintf(stderr, "\n--- interrupted; dumping information about last run ---\n");
+        fprintf(stderr, "stop sim time: %ds, %dns\n", stop_seconds, stop_nanos);
+
+        // Dump fun stuff from scheduler
+        // We don't have to fight with anyone for control at this point... hopefully
+        scheduler_dump_summary(g.scheduler, stderr);
+    }
+
     // Clean up IPC-heavy components
     if (g.clock)
     {
@@ -195,6 +219,7 @@ int main(int argc, char* argv[])
     // Create master scheduler
     g.scheduler = scheduler_new(SCHEDULER_SIDE_MASTER);
 
+    /*
     // Lock the clock
     if (clock_lock(g.clock))
         return 1;
@@ -206,6 +231,7 @@ int main(int argc, char* argv[])
     // Unlock the clock
     if (clock_unlock(g.clock))
         return 1;
+    */
 
     unsigned int next_proc_nanos = 0;
     unsigned int next_proc_seconds = 0;
@@ -324,26 +350,12 @@ int main(int argc, char* argv[])
         if (scheduler_unlock(g.scheduler))
             return 1;
 
+        // Break loop on interrupt
         if (g.interrupted)
-        {
-            // Lock the clock
-            if (clock_lock(g.clock))
-                return 1;
-
-            // Get latest time from clock
-            unsigned int stop_nanos = clock_get_nanos(g.clock);
-            unsigned int stop_seconds = clock_get_seconds(g.clock);
-
-            // Unlock the clock
-            if (clock_unlock(g.clock))
-                return 1;
-
-            fprintf(stderr, "\n--- last run statistics ---\n");
-            fprintf(stderr, "stop time: %ds, %dns\n", stop_seconds, stop_nanos);
-
             break;
-        }
 
         usleep(100000);
     }
+
+    return 0;
 }

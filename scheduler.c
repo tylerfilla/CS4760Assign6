@@ -880,4 +880,15 @@ int scheduler_wait(scheduler_s* self)
 
 void scheduler_dump_summary(scheduler_s* self, FILE* dest)
 {
+    for (int q = 0; q < 3; ++q)
+    {
+        __process_queue_s* queue = &self->__mem->ready_queues[q];
+
+        fprintf(dest, "queue %d: ", q);
+        for (int p = 0; p < MAX_USER_PROCS; ++p)
+        {
+            fprintf(dest, "%d, ", queue->pids[p]);
+        }
+        fprintf(dest, "\n");
+    }
 }
