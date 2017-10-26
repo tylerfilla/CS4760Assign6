@@ -57,6 +57,7 @@ static void handle_exit()
     if (g.interrupted)
     {
         fprintf(stderr, "\n--- interrupted; dumping information about last run ---\n");
+        fprintf(stderr, "log file: %s\n", g.log_file_path);
         fprintf(stderr, "stop sim time: %ds, %dns\n", stop_seconds, stop_nanos);
 
         // Dump fun stuff from scheduler

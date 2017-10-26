@@ -122,7 +122,7 @@ int main(int argc, char* argv[])
             // Time spent waiting on an event
             unsigned long evt_duration_time = 0;
 
-            switch (2)//rand() % 4)
+            switch (rand() % 4)
             {
             case 0:
                 // Terminate immediately
