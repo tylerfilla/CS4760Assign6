@@ -306,7 +306,8 @@ int main(int argc, char* argv[])
 
             if (!suppress)
             {
-                printf("user proc %d: summary: used %ldns cpu time\n", getpid(), cpu_time);
+                printf("user proc %d: summary: used %ldns cpu time (subject to clock granularity)\n", getpid(),
+                        cpu_time);
                 fflush(stdout);
             }
         }
