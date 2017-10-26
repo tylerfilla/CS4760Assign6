@@ -41,28 +41,31 @@ static struct
 
 static void handle_exit()
 {
-    // Get stop time
-    unsigned int stop_nanos = 0;
-    unsigned int stop_seconds = 0;
-    if (clock_lock(g.clock) == 0)
+    if (g.clock)
     {
         // Get stop time
-        stop_nanos = clock_get_nanos(g.clock);
-        stop_seconds = clock_get_seconds(g.clock);
+        unsigned int stop_nanos = 0;
+        unsigned int stop_seconds = 0;
+        if (clock_lock(g.clock) == 0)
+        {
+            // Get stop time
+            stop_nanos = clock_get_nanos(g.clock);
+            stop_seconds = clock_get_seconds(g.clock);
 
-        // Unlock the clock
-        clock_unlock(g.clock);
-    }
+            // Unlock the clock
+            clock_unlock(g.clock);
+        }
 
-    if (g.interrupted)
-    {
-        fprintf(stderr, "\n--- interrupted; dumping information about last run ---\n");
-        fprintf(stderr, "log file: %s\n", g.log_file_path);
-        fprintf(stderr, "time now: %ds, %dns\n", stop_seconds, stop_nanos);
+        if (g.interrupted)
+        {
+            fprintf(stderr, "\n--- interrupted; dumping information about last run ---\n");
+            fprintf(stderr, "log file: %s\n", g.log_file_path);
+            fprintf(stderr, "time now: %ds, %dns\n", stop_seconds, stop_nanos);
 
-        // Dump fun stuff from scheduler
-        // We don't have to fight with anyone for control at this point... hopefully
-        scheduler_dump_summary(g.scheduler, stderr);
+            // Dump fun stuff from scheduler
+            // We don't have to fight with anyone for control at this point... hopefully
+            scheduler_dump_summary(g.scheduler, stderr);
+        }
     }
 
     // Clean up IPC-heavy components
@@ -220,20 +223,9 @@ int main(int argc, char* argv[])
     // Create master scheduler
     g.scheduler = scheduler_new(SCHEDULER_SIDE_MASTER);
 
-    /*
-    // Lock the clock
-    if (clock_lock(g.clock))
-        return 1;
+    fprintf(stderr, "press ^C at a terminal or send SIGINT to stop the simulation\n");
 
-    // Get starting time
-    unsigned int start_nanos = clock_get_nanos(g.clock);
-    unsigned int start_seconds = clock_get_seconds(g.clock);
-
-    // Unlock the clock
-    if (clock_unlock(g.clock))
-        return 1;
-    */
-
+    // Scheduled time to spawn another SUP
     unsigned int next_proc_nanos = 0;
     unsigned int next_proc_seconds = 0;
 
