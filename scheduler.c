@@ -76,17 +76,17 @@ typedef struct
     /** The second part of the simulated time at which the process spawned. */
     unsigned int spawn_time_seconds;
 
-    /** The total simulated CPU time this process has accumulated (in nanoseconds). */
-    unsigned long total_cpu_time;
-
-    /** The total simulated wait time this process has accumulated (in nanoseconds). */
-    unsigned long total_wait_time;
-
     /** The nanosecond part of the simulated time at which the last burst ended. */
     unsigned int last_burst_end_nanos;
 
     /** The second part of the simulated time at which the last burst ended. */
     unsigned int last_burst_end_seconds;
+
+    /** The total simulated CPU time this process has accumulated (in nanoseconds). */
+    unsigned long total_cpu_time;
+
+    /** The total simulated wait time this process has accumulated (in nanoseconds). */
+    unsigned long total_wait_time;
 } __process_ctl_block_s;
 
 /**
@@ -126,6 +126,20 @@ struct __scheduler_mem_s
 
     /** The time quantum, in nanoseconds, of the currently scheduled process. Valid iff dispatch_proc != -1. */
     unsigned int dispatch_quantum;
+
+    unsigned int idle_start_nanos;
+    unsigned int idle_start_seconds;
+
+    /** The total number of SUPs spawned over the simulation. */
+    unsigned int total_procs;
+
+    /** The total CPU idle time in simulated nanoseconds over the simulation. */
+    unsigned long total_cpu_idle_time;
+
+    /** The total wait time experienced by SUPs over the simulation. */
+    unsigned long total_wait_time;
+
+    unsigned long total_turnaround_time;
 };
 
 /**
@@ -670,36 +684,29 @@ int scheduler_complete_spawn(scheduler_s* self, pid_t pid, unsigned int time_nan
     scheduler_ready_enqueue(self, pid, PRIO_HIGH);
 
     self->__mem->num_procs++;
-
-    /*
-    for (int q = 0; q < 3; ++q)
-    {
-        printf("queue %d (head: %d, tail: %d, length: %d): ", q, self->__mem->ready_queues[q].idx_head,
-                self->__mem->ready_queues[q].idx_tail, self->__mem->ready_queues[q].length);
-        for (int i = 0; i < MAX_USER_PROCS; ++i)
-        {
-            printf("%d, ", self->__mem->ready_queues[q].pids[i]);
-        }
-        printf("\n");
-        printf(" -> avg wait: %ld\n", scheduler_ready_wait_avg(self, q));
-    }
-    */
+    self->__mem->total_procs++;
 
     return 0;
 }
 
-int scheduler_complete_death(scheduler_s* self, pid_t pid)
+int scheduler_complete_death(scheduler_s* self, pid_t pid, unsigned int death_nanos, unsigned int death_seconds)
 {
     // Only run on master side
     if (self->side != SCHEDULER_SIDE_MASTER)
         return 1;
 
-    // TODO: Add process's stats to global stats for final readout
-
     // Remove pid from ready queue
     __process_ctl_block_s* block = scheduler_find_pcb(self, pid);
     int prio = block->prio;
     scheduler_ready_remove(self, pid, prio);
+
+    // Calculate turnaround time
+    unsigned long spawn_time = (unsigned long) block->spawn_time_nanos
+            + (unsigned long) block->spawn_time_seconds * 1000000000;
+    unsigned long death_time = (unsigned long) death_nanos + (unsigned long) death_seconds * 1000000000;
+    unsigned long turnaround_time = death_time - spawn_time;
+
+    self->__mem->total_turnaround_time += turnaround_time;
 
     // Destroy process control block
     scheduler_destroy_pcb(self, pid);
@@ -714,7 +721,7 @@ int scheduler_complete_death(scheduler_s* self, pid_t pid)
     return 0;
 }
 
-pid_t scheduler_select_and_schedule(scheduler_s* self)
+pid_t scheduler_select_and_schedule(scheduler_s* self, unsigned int time_nanos, unsigned int time_seconds)
 {
     // Only run on master side
     if (self->side != SCHEDULER_SIDE_MASTER)
@@ -783,6 +790,14 @@ pid_t scheduler_select_and_schedule(scheduler_s* self)
     self->__mem->dispatch_proc = pid;
     self->__mem->dispatch_quantum = quantum;
 
+    unsigned long idle_start_time = (unsigned long) self->__mem->idle_start_nanos
+            + (unsigned long) self->__mem->idle_start_seconds * 1000000000;
+    unsigned long now_time = (unsigned long) time_nanos + (unsigned long) time_seconds * 1000000000;
+
+    // Compute duration of last idle period
+    unsigned long idle_time = now_time - idle_start_time;
+    self->__mem->total_cpu_idle_time += idle_time;
+
     return pid;
 }
 
@@ -821,6 +836,8 @@ int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int tim
     block->total_cpu_time += cpu_time;
     block->total_wait_time += wait_time;
 
+    self->__mem->total_wait_time += wait_time;
+
     if (last_state == STATE_RUN)
     {
         block->last_burst_end_nanos = time_nanos;
@@ -854,6 +871,10 @@ int scheduler_yield(scheduler_s* self, unsigned int time_nanos, unsigned int tim
     // After the slave unlocks the scheduler, the CPU will be considered idle
     self->__mem->dispatch_proc = -1;
 
+    // Save time to track CPU idling
+    self->__mem->idle_start_nanos = time_nanos;
+    self->__mem->idle_start_seconds = time_seconds;
+
     return 0;
 }
 
@@ -880,6 +901,14 @@ int scheduler_wait(scheduler_s* self)
 
 void scheduler_dump_summary(scheduler_s* self, FILE* dest)
 {
+    unsigned long avg_turnaround_time = self->__mem->total_turnaround_time / self->__mem->total_procs;
+    unsigned long avg_wait_time = self->__mem->total_wait_time / self->__mem->total_procs;
+
+    fprintf(dest, "avg turnaround: %ldns, avg wait: %ldns, total cpu idle: %ldns\n", avg_turnaround_time, avg_wait_time,
+            self->__mem->total_cpu_idle_time);
+
+    // Read out queues
+    // Completely unnecessary, but looks cool
     for (int q = 0; q < 3; ++q)
     {
         __process_queue_s* queue = &self->__mem->ready_queues[q];

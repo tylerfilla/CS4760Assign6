@@ -58,7 +58,7 @@ static void handle_exit()
     {
         fprintf(stderr, "\n--- interrupted; dumping information about last run ---\n");
         fprintf(stderr, "log file: %s\n", g.log_file_path);
-        fprintf(stderr, "stop sim time: %ds, %dns\n", stop_seconds, stop_nanos);
+        fprintf(stderr, "time now: %ds, %dns\n", stop_seconds, stop_nanos);
 
         // Dump fun stuff from scheduler
         // We don't have to fight with anyone for control at this point... hopefully
@@ -316,12 +316,23 @@ int main(int argc, char* argv[])
         // Handle dead SUPs
         if (g.dead_proc)
         {
-            // Not atomic!
             pid_t pid = g.dead_proc;
             g.dead_proc = 0;
 
+            // Lock the clock
+            if (clock_lock(g.clock))
+                return 1;
+
+            // Get latest time from clock
+            unsigned int death_nanos = clock_get_nanos(g.clock);
+            unsigned int death_seconds = clock_get_seconds(g.clock);
+
+            // Unlock the clock
+            if (clock_unlock(g.clock))
+                return 1;
+
             // Need to handle death
-            scheduler_complete_death(g.scheduler, pid);
+            scheduler_complete_death(g.scheduler, pid, death_nanos, death_seconds);
 
             fprintf(g.log_file, "user proc %d: dead\n", pid);
             fflush(g.log_file);
@@ -331,7 +342,7 @@ int main(int argc, char* argv[])
         if (scheduler_get_dispatch_proc(g.scheduler) == -1)
         {
             // Select and schedule (dispatch) the next SUP
-            pid_t pid = scheduler_select_and_schedule(g.scheduler);
+            pid_t pid = scheduler_select_and_schedule(g.scheduler, now_nanos, now_seconds);
 
             // If a process couldn't be scheduled
             // TODO: This is part of CPU idle time

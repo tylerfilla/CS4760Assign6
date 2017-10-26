@@ -113,7 +113,7 @@ int scheduler_complete_spawn(scheduler_s* scheduler, pid_t pid, unsigned int tim
  * @param pid The old process's pid
  * @return Zero on success, otherwise nonzero
  */
-int scheduler_complete_death(scheduler_s* scheduler, pid_t pid);
+int scheduler_complete_death(scheduler_s* scheduler, pid_t pid, unsigned int, unsigned int);
 
 /**
  * On a master-side scheduler instance, select and schedule the next SUP to execute.
@@ -121,9 +121,11 @@ int scheduler_complete_death(scheduler_s* scheduler, pid_t pid);
  * Master only.
  *
  * @param scheduler The scheduler instance
+ * @param time_nanos The nanosecond time part
+ * @param time_seconds The second time part
  * @return The pid of the scheduled process, otherwise -1
  */
-pid_t scheduler_select_and_schedule(scheduler_s* scheduler);
+pid_t scheduler_select_and_schedule(scheduler_s* scheduler, unsigned int time_nanos, unsigned int time_seconds);
 
 /**
  * On a slave-side scheduler instance, get the currently scheduled and dispatched process's pid.
