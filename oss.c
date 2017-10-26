@@ -303,6 +303,7 @@ int main(int argc, char* argv[])
 
                 fprintf(g.log_file, "spawned user proc %d (sim time %ds, %dns)\n", child_pid, spawn_seconds,
                         spawn_nanos);
+                fflush(g.log_file);
             }
 
             // Schedule next process spawn
@@ -322,6 +323,7 @@ int main(int argc, char* argv[])
             scheduler_complete_death(g.scheduler, pid);
 
             fprintf(g.log_file, "user proc %d: dead\n", pid);
+            fflush(g.log_file);
         }
 
         // If a process is not currently scheduled
@@ -344,6 +346,7 @@ int main(int argc, char* argv[])
             }
 
             fprintf(g.log_file, "dispatched user proc %d (sim time %ds, %dns)\n", pid, now_seconds, now_nanos);
+            fflush(g.log_file);
         }
 
         // Unlock the scheduler

@@ -107,6 +107,7 @@ int main(int argc, char* argv[])
             unsigned long start_time = (unsigned long) start_nanos + (unsigned long) start_seconds * 1000000000l;
 
             printf("user proc %d: resume (sim time %ds, %dns)\n", getpid(), start_seconds, start_nanos);
+            fflush(stdout);
 
             //
             // Event Simulation
@@ -126,11 +127,13 @@ int main(int argc, char* argv[])
             case 0:
                 // Terminate immediately
                 printf("user proc %d: rolled a 0: terminating immediately\n", getpid());
+                fflush(stdout);
                 terminate = 1;
                 break;
             case 1:
                 // Terminate after time quantum
                 printf("user proc %d: rolled a 1: terminating after full time quantum\n", getpid());
+                fflush(stdout);
                 while (1)
                 {
                     // Lock the clock
@@ -159,6 +162,7 @@ int main(int argc, char* argv[])
             case 2:
                 // Block on a simulated I/O event
                 printf("user proc %d: rolled a 2: waiting on an event\n", getpid());
+                fflush(stdout);
                 {
                     // Randomize duration of "event"
                     unsigned int evt_duration_nanos = (unsigned int) (rand() % 1000);
@@ -176,6 +180,7 @@ int main(int argc, char* argv[])
                             + (unsigned long) evt_done_seconds * 1000000000l;
 
                     printf("user proc %d: info: event will complete after %ldns\n", getpid(), evt_duration_time);
+                    fflush(stdout);
 
                     // Put SUP into WAIT
                     if (scheduler_lock(g.scheduler))
@@ -217,16 +222,19 @@ int main(int argc, char* argv[])
                     }
 
                     printf("user proc %d: info: event has occurred\n", getpid());
+                    fflush(stdout);
                     suppress = 1;
                 }
                 break;
             case 3:
                 // Run for some time (a percent of the quantum) and yield
                 printf("user proc %d: rolled a 3: running for some percentage of quantum\n", getpid());
+                fflush(stdout);
                 {
                     unsigned int quantum_fraction = quantum / (1 + rand() % 99);
 
                     printf("user proc %d: info: will get preempted after %dns\n", getpid(), quantum_fraction);
+                    fflush(stdout);
 
                     while (1)
                     {
@@ -286,6 +294,7 @@ int main(int argc, char* argv[])
             if (!suppress)
             {
                 printf("user proc %d: yield (sim time %ds, %dns)\n", getpid(), stop_seconds, stop_nanos);
+                fflush(stdout);
             }
 
             // Yield control back to the system after next unlock
@@ -298,10 +307,9 @@ int main(int argc, char* argv[])
             if (!suppress)
             {
                 printf("user proc %d: summary: used %ldns cpu time\n", getpid(), cpu_time);
+                fflush(stdout);
             }
         }
-
-        fflush(stdout);
 
         // Unlock the scheduler
         if (scheduler_unlock(g.scheduler))
@@ -313,6 +321,7 @@ int main(int argc, char* argv[])
         if (g.interrupted)
         {
             printf("user proc %d: interrupted\n", getpid());
+            fflush(stdout);
             return 2;
         }
     }
