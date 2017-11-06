@@ -1,50 +1,11 @@
 Tyler Filla
 CS 4760
-Assignment 4
+Assignment 5
 
 Preamble
 ========
 
-In this project, I drew upon work and concepts previously established in project 3. This project tracks the lifetimes of
-indefinitely many simulated user processes (hereafter referred to as SUPs in documentation and in code), with up to
-eighteen concurrent SUPs allowed at any given moment. As an implementation detail, each SUP's pid matches the pid of the
-child process that is simulating it. This is very intentional and makes things simpler internally.
-
-The purpose of the project, to simulate multi-level scheduling, is achieved through the use of three independent queue
-structures to track those SUPs that are ready to be dispatched (see below). These ready queues are implemented as
-circular buffers of pids in System V shared memory, guarded by locks made with SysV semaphores.
-
-SUPs have a notion of state, simulating the analogous feature of real processes. Each of these states carries
-implications that mimic those in the real world. The following states are simulated:
- a) READY
- b) RUN
- c) WAIT
-
-SUPs in state READY are guaranteed to be represented in exactly one ready queue, and vice-versa. When a SUP is
-dispatched, its state transitions to RUN. Per the assignment, the child process decides the fate of its simulated SUP
-with a rand(3) call. Eventually the SUP gets preempted (its child process decides to stop before or at the time quantum
-distributed by oss) or it waits on an event (its child process decides to physically wait for a random time). When the
-former occurs, the SUP goes back into READY state. For the latter, the SUP goes into WAIT state.
-
-When a SUP moves from RUN to READY, the scheduler (part of the oss process) re-evaluates its priority and enqueues it
-into the appropriate ready queue. "Appropriate" is determined based on a set of hardcoded constants as per the assigned
-instructions. This process is referred to as yielding.
-
-When a SUP moves from RUN to WAIT, the scheduler treats it *as if* it has yielded (see above). It is not put into any
-ready queue. The child process behind the SUP, however, is still running. This simulates the SUP still occupying
-resources (as it still counts against the maximum process amount). The child process physically waits for a random
-amount of time (as defined in assignment) and then decides to resubmit the SUP to the scheduler. As purely a quirk in
-the implementation, the child process notifies the scheduler of the occurrence of the "event" and its subsequent desire
-to reschedule the SUP by following the same code path used to yield control from RUN to READY. The SUP is *never*
-actually in the RUN state while blocking for an event, however.
-
-Note that the clock is very granular and increments very closely to the rate with which SUPs are dispatched. It may not
-be immediately apparent that SUPs can be scheduled in while one or more others are waiting. I found it is more common
-for waits to end and SUPs to go back to READY before the next dispatch even takes place. It may require capturing a
-significant length of time in the log to see such an event.
-
-Also, a minor deviation: I do not use a bit vector to track process control block allocation. I use the pid fields in
-the blocks themselves. This is less efficient at runtime, but was more efficient at the time of development.
+[ preamble for assignment 5 ]
 
 Directory Structure
 ===================
@@ -59,10 +20,6 @@ Project Root
  |
  +-- Makefile
  |
- +-- scheduler.c    (the main file for the scheduler library)
- |
- +-- scheduler.h    (the corresponding header file for scheduler.c)
- |
  +-- oss.c          (the main file for the oss program)
  |
  +-- README
@@ -70,7 +27,7 @@ Project Root
 Building
 ========
 
-To build, run the following command as usual:
+To build, run the following command:
 
 $ make
 
@@ -85,10 +42,7 @@ The program will run with the assigned defaults if you run the following:
 
 $ ./oss
 
-Defaults:
-- Log file: ./oss.log
-
-Interrupt the process with ^C on a terminal to stop the simulation and view a report.
+Interrupt the process with ^C on a terminal to stop the simulation.
 
 Cleanup
 =======

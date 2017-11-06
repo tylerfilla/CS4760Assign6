@@ -1,7 +1,7 @@
 #
 # Tyler Filla
 # CS 4760
-# Assignment 4
+# Assignment 5
 #
 
 AR=ar
@@ -10,7 +10,7 @@ CFLAGS=-Wall -std=gnu99
 LDFLAGS=
 
 EXECUTABLES=child oss
-LIBRARIES=clock.a scheduler.a
+LIBRARIES=clock.a
 
 #
 # Patterns
