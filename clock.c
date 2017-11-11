@@ -228,7 +228,7 @@ fail_shm:
  */
 static int clock_stop_in(clock_s* self)
 {
-    if (self->running)
+    if (!self->running)
         return 1;
 
     errno = 0;
@@ -326,7 +326,7 @@ clock_s* clock_construct(clock_s* self, int mode)
         clock_start_out(self);
         break;
     default:
-        break;
+        return NULL;
     }
 
     return self;
@@ -337,20 +337,16 @@ clock_s* clock_destruct(clock_s* self)
     if (self == NULL)
         return NULL;
 
-    // Stop clock if running
-    if (self->running)
+    switch (self->mode)
     {
-        switch (self->mode)
-        {
-        case CLOCK_MODE_IN:
-            clock_stop_in(self);
-            break;
-        case CLOCK_MODE_OUT:
-            clock_stop_out(self);
-            break;
-        default:
-            break;
-        }
+    case CLOCK_MODE_IN:
+        clock_stop_in(self);
+        break;
+    case CLOCK_MODE_OUT:
+        clock_stop_out(self);
+        break;
+    default:
+        return NULL;
     }
 
     return self;
