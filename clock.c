@@ -13,8 +13,8 @@
 
 #include "clock.h"
 
-#define SHM_FTOK_CHAR 'C'
-#define SEM_FTOK_CHAR 'D'
+#define SEM_FTOK_CHAR 'C'
+#define SHM_FTOK_CHAR 'D'
 
 /**
  * Internal memory for clock. Shared.
@@ -317,7 +317,7 @@ clock_s* clock_construct(clock_s* self, int mode)
     self->semid = -1;
     self->__mem = NULL;
 
-    switch (self->mode)
+    switch (mode)
     {
     case CLOCK_MODE_IN:
         clock_start_in(self);
