@@ -1,7 +1,7 @@
 /*
  * Tyler Filla
  * CS 4760
- * Assignment 4
+ * Assignment 5
  */
 
 #include <signal.h>
