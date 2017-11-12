@@ -53,4 +53,27 @@ resmgr_s* resmgr_construct(resmgr_s* resmgr, int side);
  */
 resmgr_s* resmgr_destruct(resmgr_s* resmgr);
 
+/**
+ * Lock a resource manager instance for exclusive access. This blocks if already locked.
+ *
+ * @param clock The resource manager instance
+ * @return Zero on success, otherwise nonzero
+ */
+int resmgr_lock(resmgr_s* clock);
+
+/**
+ * Unlock a locked resource manager instance.
+ *
+ * @param clock The resource manager instance
+ * @return Zero on success, otherwise nonzero
+ */
+int resmgr_unlock(resmgr_s* clock);
+
+/**
+ * Resolve any and all deadlocks in the system.
+ *
+ * @param resmgr The resource manager instance
+ */
+void resmgr_resolve_deadlocks(resmgr_s* resmgr);
+
 #endif // #ifndef RESMGR_H

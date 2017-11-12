@@ -83,3 +83,17 @@ resmgr_s* resmgr_destruct(resmgr_s* self)
 
     return self;
 }
+
+int resmgr_lock(resmgr_s* clock)
+{
+    return 0;
+}
+
+int resmgr_unlock(resmgr_s* clock)
+{
+    return 0;
+}
+
+void resmgr_resolve_deadlocks(resmgr_s* resmgr)
+{
+}

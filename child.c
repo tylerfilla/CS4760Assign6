@@ -12,15 +12,15 @@
 #include <unistd.h>
 
 #include "clock.h"
-#include "scheduler.h"
+#include "resmgr.h"
 
 static struct
 {
     /** The incoming clock instance. */
     clock_s* clock;
 
-    /** The slave scheduler instance. */
-    scheduler_s* scheduler;
+    /** The client resource manager instance. */
+    resmgr_s* resmgr;
 
     /** Nonzero once SIGINT received. */
     volatile sig_atomic_t interrupted;
@@ -33,9 +33,9 @@ static void handle_exit()
     {
         clock_delete(g.clock);
     }
-    if (g.scheduler)
+    if (g.resmgr)
     {
-        scheduler_delete(g.scheduler);
+        resmgr_delete(g.resmgr);
     }
 }
 
@@ -62,9 +62,9 @@ int main(int argc, char* argv[])
     // Create and start incoming (read-only) clock
     g.clock = clock_new(CLOCK_MODE_IN);
 
-    // Create slave scheduler
-    // This connects to the existing master scheduler
-    g.scheduler = scheduler_new(SCHEDULER_SIDE_SLAVE);
+    // Create client resource manager instance
+    // This connects to the existing server resource manager
+    g.resmgr = resmgr_new(RESMGR_SIDE_CLIENT);
 
     int terminate = 0;
     int suppress = 0;
@@ -72,19 +72,20 @@ int main(int argc, char* argv[])
     // This loop represents part of the operating system control
     while (1)
     {
+        /*
         // Lock the scheduler
-        if (scheduler_lock(g.scheduler))
+        if (scheduler_lock(g.resmgr))
             return 1;
 
         // If this SUP is dispatched
         // It is at this point that the SUP is considered to be running
-        if (scheduler_get_dispatch_proc(g.scheduler) == getpid())
+        if (scheduler_get_dispatch_proc(g.resmgr) == getpid())
         {
             // Get assigned time quantum
-            unsigned int quantum = scheduler_get_dispatch_quantum(g.scheduler);
+            unsigned int quantum = scheduler_get_dispatch_quantum(g.resmgr);
 
             // Unlock the scheduler
-            if (scheduler_unlock(g.scheduler))
+            if (scheduler_unlock(g.resmgr))
                 return 1;
 
             //
@@ -183,11 +184,11 @@ int main(int argc, char* argv[])
                     fflush(stdout);
 
                     // Put SUP into WAIT
-                    if (scheduler_lock(g.scheduler))
+                    if (scheduler_lock(g.resmgr))
                         return 1;
-                    if (scheduler_wait(g.scheduler))
+                    if (scheduler_wait(g.resmgr))
                         return 1;
-                    if (scheduler_unlock(g.scheduler))
+                    if (scheduler_unlock(g.resmgr))
                         return 1;
 
                     //
@@ -288,7 +289,7 @@ int main(int argc, char* argv[])
             unsigned long cpu_time = stop_time - start_time - evt_duration_time;
 
             // Lock the scheduler
-            if (scheduler_lock(g.scheduler))
+            if (scheduler_lock(g.resmgr))
                 return 1;
 
             if (!suppress)
@@ -301,7 +302,7 @@ int main(int argc, char* argv[])
             // Timing details are provided to the scheduler so that it can reevaluate process priority
             // In a perfect world, this wouldn't be controllable by the child
             // This is always done, regardless of the child's fate
-            if (scheduler_yield(g.scheduler, stop_nanos, stop_seconds, cpu_time))
+            if (scheduler_yield(g.resmgr, stop_nanos, stop_seconds, cpu_time))
                 return 1;
 
             if (!suppress)
@@ -313,11 +314,13 @@ int main(int argc, char* argv[])
         }
 
         // Unlock the scheduler
-        if (scheduler_unlock(g.scheduler))
+        if (scheduler_unlock(g.resmgr))
             return 1;
 
         if (terminate)
             return 0;
+
+        */
 
         if (g.interrupted)
         {
