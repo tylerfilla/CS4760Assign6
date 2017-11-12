@@ -18,12 +18,35 @@
 #define SEM_FTOK_CHAR 'S'
 
 /**
+ * The maximum number of concurrent user processes.
+ */
+#define MAX_USER_PROCS 18
+
+/**
  * The fixed number of system resources available.
  */
 #define NUM_RESOURCE_CLASSES 20
 
 /**
- * A resource descriptor for a resource class.
+ * A process wait queue for a particular resource class.
+ */
+typedef struct
+{
+    /** The stored pids, structured as a circular buffer. */
+    pid_t pids[MAX_USER_PROCS];
+
+    /** The number of elements in the queue. */
+    unsigned int length;
+
+    /** The rolling head of the queue. */
+    unsigned int idx_head;
+
+    /** The rolling tail of the queue. */
+    unsigned int idx_tail;
+} __res_queue_s;
+
+/**
+ * A resource descriptor for a particular resource class.
  */
 typedef struct
 {
@@ -32,6 +55,9 @@ typedef struct
 
     /** The number of resources of this class remaining. */
     unsigned int remaining;
+
+    /** The process wait queue. */
+    __res_queue_s wait_queue;
 } __rd_s;
 
 struct __resmgr_mem_s
@@ -39,6 +65,72 @@ struct __resmgr_mem_s
     /** The resource descriptors. */
     __rd_s resources[NUM_RESOURCE_CLASSES];
 };
+
+/**
+ * Enqueue the given process into the wait queue on the given resource.
+ */
+static void resmgr_wait_enqueue(resmgr_s* self, pid_t proc, int res)
+{
+    __res_queue_s* queue = &self->__mem->resources[res].wait_queue;
+
+    if (queue->length == 0)
+    {
+        queue->idx_head = 0;
+        queue->idx_tail = 0;
+    }
+    else
+    {
+        queue->idx_tail++;
+        queue->idx_tail %= MAX_USER_PROCS;
+    }
+
+    queue->length++;
+    queue->pids[queue->idx_tail] = proc;
+}
+
+/**
+ * Dequeue the given process from the wait queue on the given resource.
+ */
+static pid_t resmgr_wait_dequeue(resmgr_s* self, int res)
+{
+    __res_queue_s* queue = &self->__mem->resources[res].wait_queue;
+
+    if (queue->length == 0)
+    {
+        fprintf(stderr, "attempt to dequeue from wait queue on resource %d when empty\n", res);
+        exit(1);
+    }
+
+    pid_t proc = queue->pids[queue->idx_head];
+
+    queue->length--;
+    queue->pids[queue->idx_head] = -1;
+
+    queue->idx_head++;
+    queue->idx_head %= MAX_USER_PROCS;
+
+    return proc;
+}
+
+/**
+ * Remove the given process from the wait queue on the given resource.
+ */
+static void resmgr_wait_remove(resmgr_s* self, pid_t proc, int res)
+{
+    // This is a very inefficient hack
+    // Take out all pids and put back uninteresting ones, ouch...
+    for (int p = 0; p < self->__mem->resources[res].wait_queue.length; ++p)
+    {
+        pid_t p_proc = resmgr_wait_dequeue(self, res);
+
+        // Skip matching pid
+        // Should this also increment p?
+        if (p_proc == proc)
+            continue;
+
+        resmgr_wait_enqueue(self, p_proc, res);
+    }
+}
 
 static int resmgr_start_client(resmgr_s* self)
 {
