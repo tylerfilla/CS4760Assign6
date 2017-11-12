@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <unistd.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
@@ -38,7 +39,7 @@ typedef struct
 
     /** The rolling tail of the queue. */
     unsigned int idx_tail;
-} __res_queue_s;
+} __res_wait_queue_s;
 
 /**
  * A resource descriptor for a particular resource class.
@@ -52,7 +53,13 @@ typedef struct
     unsigned int remaining;
 
     /** The process wait queue. */
-    __res_queue_s wait_queue;
+    __res_wait_queue_s wait_queue;
+
+    /** The processes that have at least one instance of the resource. */
+    int acquired_procs[MAX_USER_PROCS];
+
+    /** The length of the acquired procs list. */
+    unsigned int acquired_procs_length;
 } __rd_s;
 
 struct __resmgr_mem_s
@@ -66,7 +73,7 @@ struct __resmgr_mem_s
  */
 static void resmgr_wait_enqueue(resmgr_s* self, pid_t proc, int res)
 {
-    __res_queue_s* queue = &self->__mem->resources[res].wait_queue;
+    __res_wait_queue_s* queue = &self->__mem->resources[res].wait_queue;
 
     if (queue->length == 0)
     {
@@ -88,7 +95,7 @@ static void resmgr_wait_enqueue(resmgr_s* self, pid_t proc, int res)
  */
 static pid_t resmgr_wait_dequeue(resmgr_s* self, int res)
 {
-    __res_queue_s* queue = &self->__mem->resources[res].wait_queue;
+    __res_wait_queue_s* queue = &self->__mem->resources[res].wait_queue;
 
     if (queue->length == 0)
     {
@@ -157,7 +164,7 @@ static int resmgr_start_client(resmgr_s* self)
     }
 
     // Attach shared memory segment as read-only
-    shm = shmat(shmid, NULL, SHM_RDONLY);
+    shm = shmat(shmid, NULL, 0);
     if (errno)
     {
         perror("start client resource manager: unable to attach shm: shmat(2) failed");
@@ -493,21 +500,87 @@ int resmgr_unlock(resmgr_s* resmgr)
     return 0;
 }
 
-void resmgr_resolve_deadlocks(resmgr_s* self)
+void resmgr_update(resmgr_s* self)
 {
+    if (self->side != RESMGR_SIDE_SERVER)
+        return;
+
+    // Scan over each resource class
+    for (int res = 0; res < NUM_RESOURCE_CLASSES; ++res)
+    {
+        // Get resource descriptor
+        __rd_s* rd = &self->__mem->resources[res];
+
+        // While more instances remain and wait queue is nonempty
+        while (rd->remaining > 0 && rd->wait_queue.length > 0)
+        {
+            // Dequeue process from resource wait queue
+            pid_t proc = resmgr_wait_dequeue(self, res);
+
+            printf("resmgr: allocating resource %d to process %d\n", res, proc);
+
+            if (rd->acquired_procs_length >= MAX_USER_PROCS)
+            {
+                printf("resmgr: cannot allocate resource %d to process %d: acquisition list full\n", res, proc);
+                continue;
+            }
+
+            // Add entry to acquisition list
+            rd->acquired_procs[rd->acquired_procs_length++] = proc;
+
+            // Decrement availability count
+            // This is ultimately what limits resources and causes DEADLOCKS
+            rd->remaining--;
+        }
+    }
 }
 
-int resmgr_claim(resmgr_s* self, int res)
+void resmgr_resolve_deadlocks(resmgr_s* self)
 {
+    if (self->side != RESMGR_SIDE_SERVER)
+        return;
+
+    // TODO: Resolve deadlocks
+}
+
+int resmgr_acquire(resmgr_s* self, int res)
+{
+    if (res >= NUM_RESOURCE_CLASSES)
+        return 1;
+
+    // Add process to wait queue for desired resource
+    // The server-side resource manager will come through soon enough to grant requests
+    // This is slightly different than what was assigned, but I feel this is easier and has the same effect
+    resmgr_wait_enqueue(self, getpid(), res);
+
     return 0;
 }
 
 int resmgr_release(resmgr_s* self, int res)
 {
+    if (res >= NUM_RESOURCE_CLASSES)
+        return 1;
+
+    // TODO: Release the resource
+
     return 0;
 }
 
 int resmgr_has(resmgr_s* self, int res)
 {
+    if (res >= NUM_RESOURCE_CLASSES)
+        return 0;
+
+    // Get resource descriptor
+    __rd_s* rd = &self->__mem->resources[res];
+
+    // Scan through all processes
+    for (int i = 0; i < MAX_USER_PROCS; ++i)
+    {
+        // If calling process is listed
+        if (rd->acquired_procs[i] == getpid())
+            return 1;
+    }
+
     return 0;
 }

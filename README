@@ -7,6 +7,9 @@ Preamble
 
 [ preamble for assignment 5 ]
 
+Slightly different: Instead of child sending request via shared memory to oss to get a resource, the child puts itself
+into the wait queue of the desired resource and oss periodically rectifies these queues.
+
 Directory Structure
 ===================
 
@@ -21,6 +24,10 @@ Project Root
  +-- Makefile
  |
  +-- oss.c          (the main file for the oss program)
+ |
+ +-- resmgr.c       (the main file for the resource manager module library)
+ |
+ +-- resmgr.h       (the corresponding header file for resmgr.c)
  |
  +-- README
 

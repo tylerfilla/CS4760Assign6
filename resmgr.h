@@ -96,20 +96,31 @@ int resmgr_lock(resmgr_s* resmgr);
 int resmgr_unlock(resmgr_s* resmgr);
 
 /**
- * Resolve any and all deadlocks in the system.
+ * Update a resource manager.
+ *
+ * Server-side only.
+ *
+ * @param resmgr The resource manager instance
+ */
+void resmgr_update(resmgr_s* resmgr);
+
+/**
+ * Resolve any and all deadlocks in a system.
+ *
+ * Server-side only.
  *
  * @param resmgr The resource manager instance
  */
 void resmgr_resolve_deadlocks(resmgr_s* resmgr);
 
 /**
- * Claim an instance of a particular resource class.
+ * Acquire an instance of a particular resource class.
  *
  * @param resmgr The resource manager instance
  * @param res The resource class
  * @return Zero on success, otherwise nonzero
  */
-int resmgr_claim(resmgr_s* resmgr, int res);
+int resmgr_acquire(resmgr_s* resmgr, int res);
 
 /**
  * Release an instance of a particular resource class.

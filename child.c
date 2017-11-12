@@ -50,7 +50,7 @@ static void handle_sigint(int sig)
 int main(int argc, char* argv[])
 {
     atexit(&handle_exit);
-    srand((unsigned int) time(NULL));
+    srand((unsigned int) time(NULL) ^ getpid());
 
     // Handle SIGINT
     struct sigaction sigaction_sigint = {};
@@ -67,9 +67,9 @@ int main(int argc, char* argv[])
     // This connects to the existing server resource manager
     g.resmgr = resmgr_new(RESMGR_SIDE_CLIENT);
 
-    // The resources claimed by this process
-    int claimed_resources[NUM_RESOURCE_CLASSES];
-    int num_claimed_resources = 0;
+    // The resource state for this process
+    int acquired_resources[NUM_RESOURCE_CLASSES];
+    int num_acquired_resources = 0;
     int resource_waiting = -1;
 
     unsigned long next_resource_thing_time = 0;
@@ -94,17 +94,25 @@ int main(int argc, char* argv[])
             if (resmgr_lock(g.resmgr))
                 return 1;
 
-            // If no resources are claimed, claim one
+            // If no resources are acquired, take one
             // Otherwise, take a 50% chance of claiming v. releasing
-            if (num_claimed_resources == 0 || rand() % 2 == 0)
+            if (num_acquired_resources == 0 || rand() % 2 == 0)
             {
-                // Choose a random resource to claim
+                // Choose a random resource to acquire
                 int res = rand() % NUM_RESOURCE_CLASSES;
 
-                // Claim the resource
-                // We assume this will result in a wait (waits are resolved later on)
-                if (resmgr_claim(g.resmgr, res))
+                printf("%d: requesting resource %d\n", getpid(), res);
+
+                // Acquire the resource
+                // We just assume this will result in a wait (waits are resolved later on)
+                // For now we just need to unlock the resource manager and regroup
+                if (resmgr_acquire(g.resmgr, res))
+                {
+                    if (resmgr_unlock(g.resmgr))
+                        return 1;
+
                     return 1;
+                }
 
                 // Mark waiting on resource
                 resource_waiting = res;
@@ -115,23 +123,30 @@ int main(int argc, char* argv[])
                 int res = -1;
                 for (int ri = 0; ri < NUM_RESOURCE_CLASSES; ++ri)
                 {
-                    if (claimed_resources[ri])
+                    if (acquired_resources[ri])
                     {
                         res = ri;
                     }
                 }
 
-                // If no resources found, there is a fatal consistency error in this process
+                // If no resources are found, there is a fatal inconsistency error in this process
                 if (res == -1)
                     return 1;
 
                 // Release the resource
                 if (resmgr_release(g.resmgr, res))
+                {
+                    if (resmgr_unlock(g.resmgr))
+                        return 1;
+
                     return 1;
+                }
+
+                printf("%d: released resource %d\n", getpid(), res);
 
                 // Mark as released
-                claimed_resources[res] = 0;
-                num_claimed_resources--;
+                acquired_resources[res] = 0;
+                num_acquired_resources--;
                 resource_waiting = 0;
             }
 
@@ -142,6 +157,8 @@ int main(int argc, char* argv[])
             if (resource_waiting)
             {
                 int res = resource_waiting;
+
+                printf("%d: waiting for resource %d\n", getpid(), res);
 
                 while (1)
                 {
@@ -163,9 +180,11 @@ int main(int argc, char* argv[])
                     usleep(100000);
                 }
 
-                // Mark resource as claimed
-                claimed_resources[res] = 1;
-                num_claimed_resources++;
+                printf("%d: acquired resource %d\n", getpid(), res);
+
+                // Mark resource as acquired
+                acquired_resources[res] = 1;
+                num_acquired_resources++;
                 resource_waiting = 0;
             }
 
@@ -180,7 +199,7 @@ int main(int argc, char* argv[])
             // FIXME: Was this specified anywhere in the assignment?
             if (rand() % 5 == 0) // NOLINT
             {
-                printf("%d: dying of natural causes\n", getpid()); // FIXME: Don't actually say this
+                printf("%d: dying of natural causes\n", getpid());
                 return 0;
             }
 

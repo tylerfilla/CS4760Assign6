@@ -217,6 +217,7 @@ int main(int argc, char* argv[])
     // We will communicate on the terminal using stderr
     //dup2(fileno(g.log_file), STDOUT_FILENO);
 
+    /*
     // Register handler for SIGCHLD signal (to know when children die)
     struct sigaction sigaction_sigchld = {};
     sigaction_sigchld.sa_handler = &handle_sigchld;
@@ -225,6 +226,7 @@ int main(int argc, char* argv[])
         perror("cannot handle SIGCHLD: sigaction(2) failed, this is a fatal error");
         return 2;
     }
+     */
 
     // Register handler for SIGINT signal (^C at terminal)
     struct sigaction sigaction_sigint = {};
@@ -268,6 +270,16 @@ int main(int argc, char* argv[])
         //
         // Simulate OS Duties
         //
+
+        if (resmgr_lock(g.resmgr))
+            break;
+
+        // Update the resource manager
+        // This must be done frequently to keep everything consistent
+        resmgr_update(g.resmgr);
+
+        if (resmgr_unlock(g.resmgr))
+            return 1;
 
         // Report child process deaths
         if (g.last_child_proc_dead)
