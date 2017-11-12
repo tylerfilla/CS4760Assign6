@@ -17,6 +17,7 @@
 #include "resmgr.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
+#define MAX_PROCESSES 18
 
 static struct
 {
@@ -34,6 +35,12 @@ static struct
 
     /** The resource manager instance. */
     resmgr_s* resmgr;
+
+    /** The current number of child processes. */
+    volatile sig_atomic_t num_child_procs;
+
+    /** The pid of the last dead child process. */
+    volatile sig_atomic_t last_child_proc_dead;
 
     /** Nonzero once SIGINT received. */
     volatile sig_atomic_t interrupted;
@@ -85,6 +92,22 @@ static void handle_exit()
     }
 }
 
+static void handle_sigchld(int sig)
+{
+    // Decrement number of child processes
+    g.num_child_procs--;
+
+    // printf(3) is not signal-safe
+    // POSIX allows the use of write(2), but this is unformatted
+    char death_notice_msg[] = "received a child process death notice\n";
+    write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg));
+
+    // Get and record the pid
+    // Hopefully we can report it in time
+    pid_t pid = wait(NULL);
+    g.last_child_proc_dead = pid;
+}
+
 static void handle_sigint(int sig)
 {
     // Set interrupted flag
@@ -93,6 +116,9 @@ static void handle_sigint(int sig)
 
 static pid_t launch_child()
 {
+    if (g.interrupted)
+        return -1;
+
     int child_pid = fork();
     if (child_pid == 0)
     {
@@ -100,8 +126,8 @@ static pid_t launch_child()
 
         // Redirect child stderr and stdout to log file
         // This is a hack to allow logging from children without communicating the log fd
-        dup2(fileno(g.log_file), STDERR_FILENO);
-        dup2(fileno(g.log_file), STDOUT_FILENO);
+        //dup2(fileno(g.log_file), STDERR_FILENO);
+        //dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
@@ -113,6 +139,9 @@ static pid_t launch_child()
     }
     else if (child_pid > 0)
     {
+        // Increment number of child processes
+        g.num_child_procs++;
+
         // Fork succeeded, now in parent
         return child_pid;
     }
@@ -180,22 +209,31 @@ int main(int argc, char* argv[])
     }
 
     // Open log file for appending
-    g.log_file = fopen(g.log_file_path, "w");
+    //g.log_file = fopen(g.log_file_path, "w");
     if (!g.log_file)
     {
         perror("unable to open log file, so logging will not occur");
     }
 
     // Redirect stdout to the log file
-    dup2(fileno(g.log_file), STDOUT_FILENO);
+    // We will communicate on the terminal using stderr
+    //dup2(fileno(g.log_file), STDOUT_FILENO);
+
+    // Register handler for SIGCHLD signal (to know when children die)
+    struct sigaction sigaction_sigchld = {};
+    sigaction_sigchld.sa_handler = &handle_sigchld;
+    if (sigaction(SIGCHLD, &sigaction_sigchld, NULL))
+    {
+        perror("cannot handle SIGCHLD: sigaction(2) failed, this is a fatal error");
+        return 2;
+    }
 
     // Register handler for SIGINT signal (^C at terminal)
     struct sigaction sigaction_sigint = {};
     sigaction_sigint.sa_handler = &handle_sigint;
     if (sigaction(SIGINT, &sigaction_sigint, NULL))
     {
-        perror("cannot handle SIGINT: sigaction(2) failed");
-        return 1;
+        perror("cannot handle SIGINT: sigaction(2) failed, so manual IPC cleanup possible");
     }
 
     // Create and start outgoing clock
@@ -204,21 +242,24 @@ int main(int argc, char* argv[])
     // Create server-side resource manager instance
     g.resmgr = resmgr_new(RESMGR_SIDE_SERVER);
 
-    fprintf(stderr, "press ^C at a terminal or send SIGINT to stop the simulation\n");
+    fprintf(stderr, "press ^C to stop the simulation\n");
 
-    // Scheduled time to spawn another SUP
-    unsigned int next_proc_nanos = 0;
-    unsigned int next_proc_seconds = 0;
+    // Time of last iteration
+    unsigned long last_time = 0;
 
     while (1)
     {
+        //
+        // Simulate Clock
+        //
+
         // Lock the clock
         if (clock_lock(g.clock))
             return 1;
 
-        // Generate a time between 1 and 500 milliseconds
-        // This duration of time passage will be simulated
-        unsigned int dn = (unsigned int) (rand() % 500000000); // NOLINT
+        // Generate a time between 1 and 1000 milliseconds
+        // This duration of time passage will be simulated this iteration
+        unsigned int dn = rand() % 1000000000u; // NOLINT
 
         // Advance the clock
         clock_advance(g.clock, dn, 0);
@@ -226,120 +267,40 @@ int main(int argc, char* argv[])
         // Get latest time from clock
         unsigned int now_nanos = clock_get_nanos(g.clock);
         unsigned int now_seconds = clock_get_seconds(g.clock);
+        unsigned long now_time = now_seconds * 1000000000ul + now_nanos;
 
         // Unlock the clock
         if (clock_unlock(g.clock))
             return 1;
 
-        /*
+        //
+        // Simulate OS Duties
+        //
 
-        // Lock the scheduler
-        if (resmgr_lock(g.resmgr))
-            return 1;
-
-        // If it is time to try to create a new process
-        if (now_nanos >= next_proc_nanos && now_seconds >= next_proc_seconds)
+        // Report child process deaths
+        if (g.last_child_proc_dead)
         {
-            // If resources are available for another process to be spawned
-            if (scheduler_available(g.resmgr))
+            printf("process %d has died\n", g.last_child_proc_dead);
+            g.last_child_proc_dead = 0;
+        }
+
+        // If we should try to spawn a child process
+        // We do so on first iteration or on subsequent iterations spaced out by 1 to 500 milliseconds
+        if (last_time == 0 || (now_time - last_time >= (rand() % 500) * 1000000u)) // NOLINT
+        {
+            // If there is room for another process
+            if (g.num_child_procs < MAX_PROCESSES)
             {
-                // Lock the clock
-                if (clock_lock(g.clock))
-                    return 1;
+                // Launch a child process
+                pid_t child = launch_child();
 
-                // Get latest time from clock
-                unsigned int spawn_nanos = clock_get_nanos(g.clock);
-                unsigned int spawn_seconds = clock_get_seconds(g.clock);
-
-                // Unlock the clock
-                if (clock_unlock(g.clock))
-                    return 1;
-
-                // Launch a child
-                pid_t child_pid = launch_child();
-
-                // If doing so failed
-                if (child_pid == -1)
-                {
-                    // Unlock the scheduler and die
-                    scheduler_unlock(g.resmgr);
-                    return 1;
-                }
-
-                // Complete spawning the child process
-                // This allocates the process control block and whatnot
-                // This does not dispatch the process, however
-                if (scheduler_complete_spawn(g.resmgr, child_pid, spawn_nanos, spawn_seconds))
-                {
-                    // Unlock the scheduler and die
-                    scheduler_unlock(g.resmgr);
-                    return 1;
-                }
-
-                fprintf(g.log_file, "spawned user proc %d (sim time %ds, %dns)\n", child_pid, spawn_seconds,
-                        spawn_nanos);
-                fflush(g.log_file);
+                printf("spawned a new process: %d\n", child);
+                printf("there are now %d processes in the system\n", g.num_child_procs);
             }
-
-            // Schedule next process spawn
-            int next_proc_delay = rand() % 3;
-            next_proc_nanos = now_nanos;
-            next_proc_seconds = now_seconds + next_proc_delay;
         }
 
-        // Handle dead SUPs
-        if (g.dead_proc)
-        {
-            pid_t pid = g.dead_proc;
-            g.dead_proc = 0;
-
-            // Lock the clock
-            if (clock_lock(g.clock))
-                return 1;
-
-            // Get latest time from clock
-            unsigned int death_nanos = clock_get_nanos(g.clock);
-            unsigned int death_seconds = clock_get_seconds(g.clock);
-
-            // Unlock the clock
-            if (clock_unlock(g.clock))
-                return 1;
-
-            // Need to handle death
-            scheduler_complete_death(g.resmgr, pid, death_nanos, death_seconds);
-
-            fprintf(g.log_file, "user proc %d: dead\n", pid);
-            fflush(g.log_file);
-        }
-
-        // If a process is not currently scheduled
-        if (scheduler_get_dispatch_proc(g.resmgr) == -1)
-        {
-            // Select and schedule (dispatch) the next SUP
-            pid_t pid = scheduler_select_and_schedule(g.resmgr, now_nanos, now_seconds);
-
-            // If a process couldn't be scheduled
-            // TODO: This is part of CPU idle time
-            if (pid == -1)
-            {
-                // Unlock the scheduler
-                if (scheduler_unlock(g.resmgr))
-                    return 1;
-
-                // Try again later
-                sleep(1);
-                continue;
-            }
-
-            fprintf(g.log_file, "dispatched user proc %d (sim time %ds, %dns)\n", pid, now_seconds, now_nanos);
-            fflush(g.log_file);
-        }
-
-        // Unlock the scheduler
-        if (scheduler_unlock(g.resmgr))
-            return 1;
-
-        */
+        // Update last iteration time
+        last_time = now_time;
 
         // Break loop on interrupt
         if (g.interrupted)
