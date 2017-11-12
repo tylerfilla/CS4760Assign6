@@ -114,8 +114,22 @@ int main(int argc, char* argv[])
                     return 1;
                 }
 
-                // Mark waiting on resource
-                resource_waiting = res;
+                if (resmgr_has(g.resmgr, res))
+                {
+                    printf("%d: immediately acquired resource %d\n", getpid(), res);
+
+                    // Mark resource as acquired
+                    acquired_resources[res] = 1;
+                    num_acquired_resources++;
+                    resource_waiting = 0;
+                }
+                else
+                {
+                    printf("%d: resource %d not available, waiting..\n", getpid(), res);
+
+                    // Mark waiting on resource
+                    resource_waiting = res;
+                }
             }
             else
             {
@@ -132,6 +146,8 @@ int main(int argc, char* argv[])
                 // If no resources are found, there is a fatal inconsistency error in this process
                 if (res == -1)
                     return 1;
+
+                printf("%d: releasing resource %d\n", getpid(), res);
 
                 // Release the resource
                 if (resmgr_release(g.resmgr, res))

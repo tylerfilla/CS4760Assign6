@@ -24,7 +24,7 @@
 #define MAX_USER_PROCS 18
 
 /**
- * A process wait queue for a particular resource class.
+ * A process queue for a particular resource class.
  */
 typedef struct
 {
@@ -39,7 +39,7 @@ typedef struct
 
     /** The rolling tail of the queue. */
     unsigned int idx_tail;
-} __res_wait_queue_s;
+} __res_queue_s;
 
 /**
  * A resource descriptor for a particular resource class.
@@ -53,7 +53,7 @@ typedef struct
     unsigned int remaining;
 
     /** The process wait queue. */
-    __res_wait_queue_s wait_queue;
+    __res_queue_s wait_queue;
 
     /** The processes that have at least one instance of the resource. */
     int acquired_procs[MAX_USER_PROCS];
@@ -69,12 +69,10 @@ struct __resmgr_mem_s
 };
 
 /**
- * Enqueue the given process into the wait queue on the given resource.
+ * Enqueue to a process queue.
  */
-static void resmgr_wait_enqueue(resmgr_s* self, pid_t proc, int res)
+static void __res_queue_offer(__res_queue_s* queue, pid_t proc)
 {
-    __res_wait_queue_s* queue = &self->__mem->resources[res].wait_queue;
-
     if (queue->length == 0)
     {
         queue->idx_head = 0;
@@ -91,17 +89,12 @@ static void resmgr_wait_enqueue(resmgr_s* self, pid_t proc, int res)
 }
 
 /**
- * Dequeue the given process from the wait queue on the given resource.
+ * Dequeue from a process queue.
  */
-static pid_t resmgr_wait_dequeue(resmgr_s* self, int res)
+static pid_t __res_queue_poll(__res_queue_s* queue)
 {
-    __res_wait_queue_s* queue = &self->__mem->resources[res].wait_queue;
-
     if (queue->length == 0)
-    {
-        fprintf(stderr, "attempt to dequeue from wait queue on resource %d when empty\n", res);
-        exit(1);
-    }
+        return -1;
 
     pid_t proc = queue->pids[queue->idx_head];
 
@@ -112,6 +105,50 @@ static pid_t resmgr_wait_dequeue(resmgr_s* self, int res)
     queue->idx_head %= MAX_USER_PROCS;
 
     return proc;
+}
+
+/**
+ * Enqueue the given process into the wait queue on the given resource.
+ */
+static void resmgr_wait_enqueue(resmgr_s* self, pid_t proc, int res)
+{
+    __res_queue_offer(&self->__mem->resources[res].wait_queue, proc);
+}
+
+/**
+ * Dequeue the given process from the wait queue on the given resource.
+ */
+static pid_t resmgr_wait_dequeue(resmgr_s* self, int res)
+{
+    return __res_queue_poll(&self->__mem->resources[res].wait_queue);
+}
+
+/**
+ * Immediately allocate a resource to a process. Not always legal, hence wait queues.
+ */
+static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
+{
+    // Get resource descriptor
+    __rd_s* rd = &self->__mem->resources[res];
+
+    printf("resmgr: allocating resource %d to process %d\n", res, proc);
+
+    if (rd->acquired_procs_length >= MAX_USER_PROCS)
+    {
+        printf("resmgr: cannot allocate resource %d to process %d: acquisition list full\n", res, proc);
+        return 1;
+    }
+
+    // Add entry to acquisition list
+    rd->acquired_procs[rd->acquired_procs_length++] = proc;
+
+    // Decrement availability count
+    // This is ultimately what limits resources and causes DEADLOCKS
+    rd->remaining--;
+
+    printf("resmgr: %d instances of resource %d remain\n", rd->remaining, res);
+
+    return 0;
 }
 
 /**
@@ -517,20 +554,8 @@ void resmgr_update(resmgr_s* self)
             // Dequeue process from resource wait queue
             pid_t proc = resmgr_wait_dequeue(self, res);
 
-            printf("resmgr: allocating resource %d to process %d\n", res, proc);
-
-            if (rd->acquired_procs_length >= MAX_USER_PROCS)
-            {
-                printf("resmgr: cannot allocate resource %d to process %d: acquisition list full\n", res, proc);
-                continue;
-            }
-
-            // Add entry to acquisition list
-            rd->acquired_procs[rd->acquired_procs_length++] = proc;
-
-            // Decrement availability count
-            // This is ultimately what limits resources and causes DEADLOCKS
-            rd->remaining--;
+            // Allocate resource
+            resmgr_allocate_resource(self, proc, res);
         }
     }
 }
@@ -548,10 +573,22 @@ int resmgr_acquire(resmgr_s* self, int res)
     if (res >= NUM_RESOURCE_CLASSES)
         return 1;
 
-    // Add process to wait queue for desired resource
-    // The server-side resource manager will come through soon enough to grant requests
-    // This is slightly different than what was assigned, but I feel this is easier and has the same effect
-    resmgr_wait_enqueue(self, getpid(), res);
+    pid_t proc = getpid();
+
+    // Get resource descriptor
+    __rd_s* rd = &self->__mem->resources[res];
+
+    // If we can allocate immediately
+    if (rd->remaining > 0)
+    {
+        return resmgr_allocate_resource(self, proc, res);
+    }
+    else
+    {
+        // Add process to wait queue for desired resource
+        // The server-side resource manager will come through soon enough to resolve waits
+        resmgr_wait_enqueue(self, getpid(), res);
+    }
 
     return 0;
 }
@@ -560,8 +597,6 @@ int resmgr_release(resmgr_s* self, int res)
 {
     if (res >= NUM_RESOURCE_CLASSES)
         return 1;
-
-    // TODO: Release the resource
 
     return 0;
 }
