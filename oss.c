@@ -255,7 +255,7 @@ int main(int argc, char* argv[])
             return 1;
 
         // Advance the clock by 0 to 250 milliseconds
-        clock_advance(g.clock, rand() % 250000000u, 0); // NOLINT
+        clock_advance(g.clock, rand() % 250000000u, 0);
 
         // Get latest time from clock
         unsigned int now_nanos = clock_get_nanos(g.clock);
@@ -294,7 +294,7 @@ int main(int argc, char* argv[])
             }
 
             // Schedule next spawn time
-            next_spawn_time = now_time + (rand() % 500) * 1000000ul; // NOLINT
+            next_spawn_time = now_time + (rand() % 500) * 1000000ul;
         }
 
         // Run deadlock detection and resolution once per simulated second

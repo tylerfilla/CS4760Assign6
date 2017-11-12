@@ -27,6 +27,11 @@
  */
 #define RESMGR_RUNNING 1
 
+/**
+ * The fixed number of system resources available.
+ */
+#define NUM_RESOURCE_CLASSES 20
+
 typedef struct __resmgr_mem_s __resmgr_mem_s;
 
 typedef struct
@@ -114,5 +119,14 @@ int resmgr_claim(resmgr_s* resmgr, int res);
  * @return Zero on success, otherwise nonzero
  */
 int resmgr_release(resmgr_s* resmgr, int res);
+
+/**
+ * Check if the calling process has the given resource.
+ *
+ * @param resmgr The resource manager instance
+ * @param res The resource class
+ * @return Nonzero if such is the case, otherwise zero
+ */
+int resmgr_has(resmgr_s* resmgr, int res);
 
 #endif // #ifndef RESMGR_H

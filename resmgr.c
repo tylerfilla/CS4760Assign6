@@ -23,11 +23,6 @@
 #define MAX_USER_PROCS 18
 
 /**
- * The fixed number of system resources available.
- */
-#define NUM_RESOURCE_CLASSES 20
-
-/**
  * A process wait queue for a particular resource class.
  */
 typedef struct
@@ -502,12 +497,17 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
 {
 }
 
-int resmgr_claim(resmgr_s* resmgr, int res)
+int resmgr_claim(resmgr_s* self, int res)
 {
     return 0;
 }
 
-int resmgr_release(resmgr_s* resmgr, int res)
+int resmgr_release(resmgr_s* self, int res)
+{
+    return 0;
+}
+
+int resmgr_has(resmgr_s* self, int res)
 {
     return 0;
 }
