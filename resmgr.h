@@ -17,6 +17,18 @@
  */
 #define RESMGR_SIDE_SERVER 1
 
+/**
+ * State indicating a resource manger instance is not running.
+ */
+#define RESMGR_NOT_RUNNING 0
+
+/**
+ * State indicating a resource manager instance is running.
+ */
+#define RESMGR_RUNNING 1
+
+typedef struct __resmgr_mem_s __resmgr_mem_s;
+
 typedef struct
 {
     /** The executing side. */
@@ -24,6 +36,15 @@ typedef struct
 
     /** Nonzero if currently running, otherwise zero. */
     int running;
+
+    /** The ID of the shared memory segment used. */
+    int shmid;
+
+    /** The ID of the semaphore set protecting the internal memory. */
+    int semid;
+
+    /** Internal shared memory structure. */
+    __resmgr_mem_s* __mem;
 } resmgr_s;
 
 /**
