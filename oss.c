@@ -99,7 +99,7 @@ static void handle_sigchld(int sig)
 
     // printf(3) is not signal-safe
     // POSIX allows the use of write(2), but this is unformatted
-    char death_notice_msg[] = "received a child process death notice\n";
+    char death_notice_msg[] = "oss: received a child process death notice\n";
     write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg));
 
     // Get and record the pid
@@ -116,9 +116,6 @@ static void handle_sigint(int sig)
 
 static pid_t launch_child()
 {
-    if (g.interrupted)
-        return -1;
-
     int child_pid = fork();
     if (child_pid == 0)
     {
@@ -194,6 +191,7 @@ int main(int argc, char* argv[])
             }
             break;
         case 'v':
+            // TODO: Implement verbosity control
             break;
         default:
             fprintf(stderr, "invalid option: -%c\n", opt);
@@ -244,9 +242,8 @@ int main(int argc, char* argv[])
 
     fprintf(stderr, "press ^C to stop the simulation\n");
 
-    // Times of last operations
-    unsigned long last_spawn_time = 0;
-    unsigned long last_deadlock_detect_time = 0;
+    unsigned long next_spawn_time = 0;
+    unsigned long next_deadlock_detect_time = 0;
 
     while (1)
     {
@@ -254,19 +251,17 @@ int main(int argc, char* argv[])
         // Simulate Clock
         //
 
-        // Lock the clock
         if (clock_lock(g.clock))
             return 1;
 
-        // Advance the clock by 500 to 1000 milliseconds
-        clock_advance(g.clock, 500u + (rand() % 1000) * 1000000u, 0); // NOLINT
+        // Advance the clock by 0 to 250 milliseconds
+        clock_advance(g.clock, rand() % 250000000u, 0); // NOLINT
 
         // Get latest time from clock
         unsigned int now_nanos = clock_get_nanos(g.clock);
         unsigned int now_seconds = clock_get_seconds(g.clock);
         unsigned long now_time = now_seconds * 1000000000ul + now_nanos;
 
-        // Unlock the clock
         if (clock_unlock(g.clock))
             return 1;
 
@@ -274,61 +269,50 @@ int main(int argc, char* argv[])
         // Simulate OS Duties
         //
 
-        // Make sure first iteration spawns something
-        if (last_spawn_time == 0)
-        {
-            last_spawn_time = now_time;
-        }
-
-        // Make sure first iteration doesn't run deadlock detection
-        if (last_deadlock_detect_time == 0)
-        {
-            last_deadlock_detect_time = now_time;
-        }
-
         // Report child process deaths
         if (g.last_child_proc_dead)
         {
-            printf("process %d has died\n", g.last_child_proc_dead);
+            printf("oss: process %d has died\n", g.last_child_proc_dead);
             g.last_child_proc_dead = 0;
         }
 
         // If we should try to spawn a child process
         // We do so on first iteration or on subsequent iterations spaced out by 1 to 500 milliseconds
-        if (now_time - last_spawn_time >= (rand() % 500) * 1000000ul) // NOLINT
+        if (now_time >= next_spawn_time)
         {
             // If there is room for another process
             if (g.num_child_procs < MAX_PROCESSES)
             {
+                if (g.interrupted)
+                    return 0;
+
                 // Launch a child process
                 pid_t child = launch_child();
 
-                printf("spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
-                printf("there are now %d processes in the system\n", g.num_child_procs);
+                printf("oss: spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
+                printf("oss: there are now %d processes in the system\n", g.num_child_procs);
             }
 
-            // Update last spawn time
-            last_spawn_time = now_time;
+            // Schedule next spawn time
+            next_spawn_time = now_time + (rand() % 500) * 1000000ul; // NOLINT
         }
 
         // Run deadlock detection and resolution once per simulated second
-        if (now_time - last_deadlock_detect_time >= 1000000000ul)
+        if (now_time >= next_deadlock_detect_time)
         {
-            // Lock the resource manager
             if (resmgr_lock(g.resmgr))
                 return 1;
 
-            printf("running deadlock detection and resolution (%ds %dns)\n", now_seconds, now_nanos);
+            printf("oss: running deadlock detection and resolution (%ds %dns)\n", now_seconds, now_nanos);
 
             // Detect and resolve deadlocks
             resmgr_resolve_deadlocks(g.resmgr);
 
-            // Unlock the resource manager
             if (resmgr_unlock(g.resmgr))
                 return 1;
 
-            // Update last deadlock detection time
-            last_deadlock_detect_time = now_time;
+            // Schedule next deadlock detection time
+            next_deadlock_detect_time = now_time + 1000000000u;
         }
 
         // Break loop on interrupt

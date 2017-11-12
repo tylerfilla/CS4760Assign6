@@ -98,12 +98,21 @@ int resmgr_unlock(resmgr_s* resmgr);
 void resmgr_resolve_deadlocks(resmgr_s* resmgr);
 
 /**
- * Claim a resource of a particular class.
+ * Claim an instance of a particular resource class.
  *
- * @param resmgr
- * @param res
- * @return
+ * @param resmgr The resource manager instance
+ * @param res The resource class
+ * @return Zero on success, otherwise nonzero
  */
 int resmgr_claim(resmgr_s* resmgr, int res);
+
+/**
+ * Release an instance of a particular resource class.
+ *
+ * @param resmgr The resource manager instance
+ * @param res The resource class
+ * @return Zero on success, otherwise nonzero
+ */
+int resmgr_release(resmgr_s* resmgr, int res);
 
 #endif // #ifndef RESMGR_H

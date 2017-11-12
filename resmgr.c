@@ -501,3 +501,13 @@ int resmgr_unlock(resmgr_s* resmgr)
 void resmgr_resolve_deadlocks(resmgr_s* self)
 {
 }
+
+int resmgr_claim(resmgr_s* resmgr, int res)
+{
+    return 0;
+}
+
+int resmgr_release(resmgr_s* resmgr, int res)
+{
+    return 0;
+}
