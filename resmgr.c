@@ -329,13 +329,13 @@ resmgr_s* resmgr_destruct(resmgr_s* self)
     return self;
 }
 
-int resmgr_lock(resmgr_s* self)
+int resmgr_lock(resmgr_s* resmgr)
 {
     errno = 0;
 
     // Try to decrement semaphore
     struct sembuf buf = { 0, -1, 0 };
-    semop(self->semid, &buf, 1);
+    semop(resmgr->semid, &buf, 1);
     if (errno)
     {
         perror("resource manager lock: unable to decrement sem: semop(2) failed");
@@ -345,13 +345,13 @@ int resmgr_lock(resmgr_s* self)
     return 0;
 }
 
-int resmgr_unlock(resmgr_s* self)
+int resmgr_unlock(resmgr_s* resmgr)
 {
     errno = 0;
 
     // Try to increment semaphore
     struct sembuf buf = { 0, 1, 0 };
-    semop(self->semid, &buf, 1);
+    semop(resmgr->semid, &buf, 1);
     if (errno)
     {
         perror("resource manager unlock: unable to increment sem: semop(2) failed");

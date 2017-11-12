@@ -244,8 +244,9 @@ int main(int argc, char* argv[])
 
     fprintf(stderr, "press ^C to stop the simulation\n");
 
-    // Time of last iteration
-    unsigned long last_time = 0;
+    // Times of last operations
+    unsigned long last_spawn_time = 0;
+    unsigned long last_deadlock_detect_time = 0;
 
     while (1)
     {
@@ -257,12 +258,8 @@ int main(int argc, char* argv[])
         if (clock_lock(g.clock))
             return 1;
 
-        // Generate a time between 1 and 1000 milliseconds
-        // This duration of time passage will be simulated this iteration
-        unsigned int dn = rand() % 1000000000u; // NOLINT
-
-        // Advance the clock
-        clock_advance(g.clock, dn, 0);
+        // Advance the clock by 500 to 1000 milliseconds
+        clock_advance(g.clock, 500u + (rand() % 1000) * 1000000u, 0); // NOLINT
 
         // Get latest time from clock
         unsigned int now_nanos = clock_get_nanos(g.clock);
@@ -277,6 +274,18 @@ int main(int argc, char* argv[])
         // Simulate OS Duties
         //
 
+        // Make sure first iteration spawns something
+        if (last_spawn_time == 0)
+        {
+            last_spawn_time = now_time;
+        }
+
+        // Make sure first iteration doesn't run deadlock detection
+        if (last_deadlock_detect_time == 0)
+        {
+            last_deadlock_detect_time = now_time;
+        }
+
         // Report child process deaths
         if (g.last_child_proc_dead)
         {
@@ -286,7 +295,7 @@ int main(int argc, char* argv[])
 
         // If we should try to spawn a child process
         // We do so on first iteration or on subsequent iterations spaced out by 1 to 500 milliseconds
-        if (last_time == 0 || (now_time - last_time >= (rand() % 500) * 1000000u)) // NOLINT
+        if (now_time - last_spawn_time >= (rand() % 500) * 1000000ul) // NOLINT
         {
             // If there is room for another process
             if (g.num_child_procs < MAX_PROCESSES)
@@ -294,13 +303,33 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
-                printf("spawned a new process: %d\n", child);
+                printf("spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
                 printf("there are now %d processes in the system\n", g.num_child_procs);
             }
+
+            // Update last spawn time
+            last_spawn_time = now_time;
         }
 
-        // Update last iteration time
-        last_time = now_time;
+        // Run deadlock detection and resolution once per simulated second
+        if (now_time - last_deadlock_detect_time >= 1000000000ul)
+        {
+            // Lock the resource manager
+            if (resmgr_lock(g.resmgr))
+                return 1;
+
+            printf("running deadlock detection and resolution (%ds %dns)\n", now_seconds, now_nanos);
+
+            // Detect and resolve deadlocks
+            resmgr_resolve_deadlocks(g.resmgr);
+
+            // Unlock the resource manager
+            if (resmgr_unlock(g.resmgr))
+                return 1;
+
+            // Update last deadlock detection time
+            last_deadlock_detect_time = now_time;
+        }
 
         // Break loop on interrupt
         if (g.interrupted)
