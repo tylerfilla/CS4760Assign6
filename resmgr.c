@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -16,9 +17,27 @@
 #define SHM_FTOK_CHAR 'R'
 #define SEM_FTOK_CHAR 'S'
 
+/**
+ * The fixed number of system resources available.
+ */
+#define NUM_RESOURCE_CLASSES 20
+
+/**
+ * A resource descriptor for a resource class.
+ */
+typedef struct
+{
+    /** Nonzero if the resource is reusable, otherwise zero. */
+    int reusable;
+
+    /** The number of resources of this class remaining. */
+    unsigned int remaining;
+} __rd_s;
+
 struct __resmgr_mem_s
 {
-    int not_empty;
+    /** The resource descriptors. */
+    __rd_s resources[NUM_RESOURCE_CLASSES];
 };
 
 static int resmgr_start_client(resmgr_s* self)
@@ -198,6 +217,32 @@ static int resmgr_start_server(resmgr_s* self)
     self->shmid = shmid;
     self->semid = semid;
     self->__mem = shm;
+
+    //
+    // Resource Initialization
+    //
+
+    // Calculate minimum and maximum bounds on reusable resources
+    // This computes 20% +/- 5% to be so
+    int res_min_reusable = (int) (0.15 * NUM_RESOURCE_CLASSES);
+    int res_max_reusable = (int) (0.25 * NUM_RESOURCE_CLASSES);
+
+    // Compute number of reusable resources
+    int res_num_reusable = res_min_reusable + rand() % (res_max_reusable - res_min_reusable + 1); // NOLINT
+
+    // Configure each resource class
+    for (int ri = 0; ri < NUM_RESOURCE_CLASSES; ++ri)
+    {
+        // Get resource descriptor
+        __rd_s* rd = &self->__mem->resources[ri];
+
+        // Mark reusable if there are more reusable resources to assign
+        // The reusable flag just needs to be nonzero to be true, so this shortcut checks out
+        rd->reusable = res_max_reusable > 0 ? res_num_reusable-- : 0;
+
+        // Generate an initial number of instances between 1 and 10, inclusive
+        rd->remaining = 1 + rand() % 10u; // NOLINT
+    }
 
     return 0;
 

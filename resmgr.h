@@ -97,4 +97,13 @@ int resmgr_unlock(resmgr_s* resmgr);
  */
 void resmgr_resolve_deadlocks(resmgr_s* resmgr);
 
+/**
+ * Claim a resource of a particular class.
+ *
+ * @param resmgr
+ * @param res
+ * @return
+ */
+int resmgr_claim(resmgr_s* resmgr, int res);
+
 #endif // #ifndef RESMGR_H
