@@ -2,14 +2,6 @@ Tyler Filla
 CS 4760
 Assignment 5
 
-Preamble
-========
-
-[ preamble for assignment 5 ]
-
-Slightly different: Instead of child sending request via shared memory to oss to get a resource, the child puts itself
-into the wait queue of the desired resource and oss periodically rectifies these queues.
-
 Directory Structure
 ===================
 
