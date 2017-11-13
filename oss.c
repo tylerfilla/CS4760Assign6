@@ -123,8 +123,8 @@ static pid_t launch_child()
 
         // Redirect child stderr and stdout to log file
         // This is a hack to allow logging from children without communicating the log fd
-        //dup2(fileno(g.log_file), STDERR_FILENO);
-        //dup2(fileno(g.log_file), STDOUT_FILENO);
+        dup2(fileno(g.log_file), STDERR_FILENO);
+        dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
@@ -207,7 +207,7 @@ int main(int argc, char* argv[])
     }
 
     // Open log file for appending
-    //g.log_file = fopen(g.log_file_path, "w");
+    g.log_file = fopen(g.log_file_path, "w");
     if (!g.log_file)
     {
         perror("unable to open log file, so logging will not occur");
@@ -215,7 +215,7 @@ int main(int argc, char* argv[])
 
     // Redirect stdout to the log file
     // We will communicate on the terminal using stderr
-    //dup2(fileno(g.log_file), STDOUT_FILENO);
+    dup2(fileno(g.log_file), STDOUT_FILENO);
 
     // Register handler for SIGCHLD signal (to know when children die)
     struct sigaction sigaction_sigchld = {};
