@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <unistd.h>
@@ -18,6 +19,9 @@
 
 static struct
 {
+    /** Nonzero if in verbose mode, otherwise zero. */
+    int verbose;
+
     /** The incoming clock instance. */
     clock_s* clock;
 
@@ -52,7 +56,12 @@ static void handle_exit()
         for (int ri = 0; ri < g.num_acquired_resources; ++ri)
         {
             int res = g.acquired_resources[ri];
-            printf("%d: exiting: releasing resource %d\n", getpid(), res);
+
+            if (g.verbose)
+            {
+                printf("%d: exiting: releasing resource %d\n", getpid(), res);
+            }
+
             resmgr_release(g.resmgr, res);
         }
 
@@ -82,6 +91,18 @@ int main(int argc, char* argv[])
     atexit(&handle_exit);
     srand((unsigned int) time(NULL) ^ getpid());
 
+    // Handle rudimentary command-line arguments
+    for (int argi = 0; argi < argc; ++argi)
+    {
+        char* arg = argv[argi];
+
+        // Verbosity control argument
+        if (strcmp(arg, "-v") == 0)
+        {
+            g.verbose = 1;
+        }
+    }
+
     // Handle SIGINT
     struct sigaction sigaction_sigint = {};
     sigaction_sigint.sa_handler = &handle_sigint;
@@ -96,6 +117,7 @@ int main(int argc, char* argv[])
     // Create client resource manager instance
     // This connects to the existing server resource manager
     g.resmgr = resmgr_new(RESMGR_SIDE_CLIENT);
+    g.resmgr->verbose = g.verbose;
 
     unsigned long next_resource_thing_time = 0;
     unsigned long next_death_check_time = 1000000000;
@@ -129,7 +151,10 @@ int main(int argc, char* argv[])
                 // Choose a random resource to acquire
                 int res = rand() % NUM_RESOURCE_CLASSES;
 
-                printf("%d: requesting resource %d\n", getpid(), res);
+                if (g.verbose)
+                {
+                    printf("%d: requesting resource %d\n", getpid(), res);
+                }
 
                 // Count allocations before requesting
                 int before_count = resmgr_count(g.resmgr, res);
@@ -147,7 +172,10 @@ int main(int argc, char* argv[])
 
                 if (resmgr_count(g.resmgr, res) > before_count)
                 {
-                    printf("%d: acquired resource %d\n", getpid(), res);
+                    if (g.verbose)
+                    {
+                        printf("%d: acquired resource %d\n", getpid(), res);
+                    }
 
                     // Mark resource as acquired
                     g.acquired_resources[res] = 1;
@@ -156,7 +184,10 @@ int main(int argc, char* argv[])
                 }
                 else
                 {
-                    printf("%d: resource %d not acquired immediately\n", getpid(), res);
+                    if (g.verbose)
+                    {
+                        printf("%d: resource %d not acquired immediately\n", getpid(), res);
+                    }
 
                     // Mark waiting on resource
                     g.resource_waiting = res;
@@ -179,7 +210,10 @@ int main(int argc, char* argv[])
                 if (res == -1)
                     return 1;
 
-                printf("%d: releasing resource %d\n", getpid(), res);
+                if (g.verbose)
+                {
+                    printf("%d: releasing resource %d\n", getpid(), res);
+                }
 
                 // Release the resource
                 if (resmgr_release(g.resmgr, res))
@@ -190,7 +224,10 @@ int main(int argc, char* argv[])
                     return 1;
                 }
 
-                printf("%d: released resource %d\n", getpid(), res);
+                if (g.verbose)
+                {
+                    printf("%d: released resource %d\n", getpid(), res);
+                }
 
                 // Mark as released
                 g.acquired_resources[res] = 0;
@@ -205,7 +242,10 @@ int main(int argc, char* argv[])
             {
                 int res = g.resource_waiting;
 
-                printf("%d: waiting for resource %d\n", getpid(), res);
+                if (g.verbose)
+                {
+                    printf("%d: waiting for resource %d\n", getpid(), res);
+                }
 
                 while (1)
                 {
@@ -227,7 +267,10 @@ int main(int argc, char* argv[])
                     usleep(100000);
                 }
 
-                printf("%d: acquired resource %d\n", getpid(), res);
+                if (g.verbose)
+                {
+                    printf("%d: acquired resource %d\n", getpid(), res);
+                }
 
                 // Mark resource as acquired
                 g.acquired_resources[res] = 1;
@@ -246,7 +289,10 @@ int main(int argc, char* argv[])
             // FIXME: Was this specified anywhere in the assignment?
             if (rand() % 20 == 0)
             {
-                printf("%d: dying of natural causes\n", getpid());
+                if (g.verbose)
+                {
+                    printf("%d: dying of natural causes\n", getpid());
+                }
                 return 0;
             }
 
@@ -257,8 +303,7 @@ int main(int argc, char* argv[])
         // Break loop on interrupt
         if (g.interrupted)
         {
-            printf("%d: interrupted\n", getpid());
-            fflush(stdout);
+            fprintf(stderr, "%d: interrupted\n", getpid());
             break;
         }
     }

@@ -214,11 +214,17 @@ static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
     // Get resource descriptor
     __rd_s* rd = &self->__mem->resources[res];
 
-    printf("resmgr: allocating resource %d to process %d\n", res, proc);
+    if (self->verbose)
+    {
+        printf("resmgr: allocating resource %d to process %d\n", res, proc);
+    }
 
     if (rd->num_allocations >= MAX_USER_PROCS)
     {
-        printf("resmgr: cannot allocate resource %d to process %d: acquisition list full\n", res, proc);
+        if (self->verbose)
+        {
+            printf("resmgr: cannot allocate resource %d to process %d: acquisition list full\n", res, proc);
+        }
         return 1;
     }
 
@@ -230,47 +236,53 @@ static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
     // This is ultimately what limits resources and causes DEADLOCKS
     rd->remaining--;
 
-    printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
+    if (self->verbose)
+    {
+        printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
+    }
 
     self->__mem->stat_num_allocations++;
 
-    // Print allocation table after every 20 allocations
-    if (self->__mem->stat_num_allocations > 0 && self->__mem->stat_num_allocations % 20 == 0)
+    if (self->verbose)
     {
-        // Header
-        printf("PID      Index ");
-        for (int p_res = 0; p_res < NUM_RESOURCE_CLASSES; ++p_res)
+        // Print allocation table after every 20 allocations
+        if (self->__mem->stat_num_allocations > 0 && self->__mem->stat_num_allocations % 20 == 0)
         {
-            printf("%3d ", p_res);
-        }
-        printf("\n");
-
-        // Body
-        for (int proc_idx = 0; proc_idx < self->__mem->num_procs; ++proc_idx)
-        {
-            pid_t p_proc = self->__mem->procs[proc_idx];
-
-            printf("%8d %5d", p_proc, proc_idx);
+            // Header
+            printf("PID      Index ");
             for (int p_res = 0; p_res < NUM_RESOURCE_CLASSES; ++p_res)
             {
-                // Get resource descriptor
-                __rd_s* p_rd = &self->__mem->resources[p_res];
-
-                // Count corresponding allocations
-                int num_instances_allocated = 0;
-                for (int i = 0; i < p_rd->num_allocations; ++i)
-                {
-                    // If calling process is found
-                    if (p_rd->allocations[i] == p_proc)
-                    {
-                        // Increment count
-                        num_instances_allocated++;
-                    }
-                }
-
-                printf("%3d ", num_instances_allocated);
+                printf("%3d ", p_res);
             }
             printf("\n");
+
+            // Body
+            for (int proc_idx = 0; proc_idx < self->__mem->num_procs; ++proc_idx)
+            {
+                pid_t p_proc = self->__mem->procs[proc_idx];
+
+                printf("%8d %5d", p_proc, proc_idx);
+                for (int p_res = 0; p_res < NUM_RESOURCE_CLASSES; ++p_res)
+                {
+                    // Get resource descriptor
+                    __rd_s* p_rd = &self->__mem->resources[p_res];
+
+                    // Count corresponding allocations
+                    int num_instances_allocated = 0;
+                    for (int i = 0; i < p_rd->num_allocations; ++i)
+                    {
+                        // If calling process is found
+                        if (p_rd->allocations[i] == p_proc)
+                        {
+                            // Increment count
+                            num_instances_allocated++;
+                        }
+                    }
+
+                    printf("%3d ", num_instances_allocated);
+                }
+                printf("\n");
+            }
         }
     }
 
@@ -851,19 +863,22 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
     if (resmgr_detect_deadlocks(self, avail_vector, request_matrix, alloc_matrix, deadlocked_procs,
             &num_deadlocked_procs))
     {
-        printf("resmgr: found %d deadlocked processes: ", num_deadlocked_procs);
-        for (int i = 0; i < num_deadlocked_procs; ++i)
+        if (num_deadlocked_procs > 1)
         {
-            printf("%d", deadlocked_procs[i]);
-
-            if (i < num_deadlocked_procs - 1)
+            printf("resmgr: found %d deadlocked processes: ", num_deadlocked_procs);
+            for (int i = 0; i < num_deadlocked_procs; ++i)
             {
-                printf(",");
-            }
+                printf("%d", deadlocked_procs[i]);
 
-            printf(" ");
+                if (i < num_deadlocked_procs - 1)
+                {
+                    printf(",");
+                }
+
+                printf(" ");
+            }
+            printf("\n");
         }
-        printf("\n");
     }
 
     //
@@ -871,7 +886,8 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
     //
 
     // Don't need to resolve no deadlocks
-    if (num_deadlocked_procs == 0)
+    // Also, one doesn't make sense
+    if (num_deadlocked_procs <= 1)
         return;
 
     printf("resmgr: trying to resolve deadlock: killing process %d\n", deadlocked_procs[0]);
@@ -943,7 +959,10 @@ int resmgr_release(resmgr_s* self, int res)
         }
     }
 
-    printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
+    if (self->verbose)
+    {
+        printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
+    }
 
     return 0;
 }

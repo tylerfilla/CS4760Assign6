@@ -48,6 +48,9 @@ typedef struct
     /** The ID of the semaphore set protecting the internal memory. */
     int semid;
 
+    /** Nonzero if in verbose mode, otherwise zero. */
+    int verbose;
+
     /** Internal shared memory structure. */
     __resmgr_mem_s* __mem;
 } resmgr_s;

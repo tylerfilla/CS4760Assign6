@@ -24,8 +24,8 @@ static struct
     /** The desired path to the log file. */
     char* log_file_path;
 
-    /** Nonzero to indicate verbose mode, otherwise zero. */
-    int verbose;
+    /** Nonzero if in verbose mode, otherwise zero. */
+    volatile sig_atomic_t verbose;
 
     /** The open log file. */
     FILE* log_file;
@@ -97,10 +97,13 @@ static void handle_sigchld(int sig)
     // Decrement number of child processes
     g.num_child_procs--;
 
-    // printf(3) is not signal-safe
-    // POSIX allows the use of write(2), but this is unformatted
-    char death_notice_msg[] = "oss: received a child process death notice\n";
-    write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg));
+    if (g.verbose)
+    {
+        // printf(3) is not signal-safe
+        // POSIX allows the use of write(2), but this is unformatted
+        char death_notice_msg[] = "oss: received a child process death notice\n";
+        write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg));
+    }
 
     // Get and record the pid
     // Hopefully we can report it in time
@@ -123,11 +126,12 @@ static pid_t launch_child()
 
         // Redirect child stderr and stdout to log file
         // This is a hack to allow logging from children without communicating the log fd
-        dup2(fileno(g.log_file), STDERR_FILENO);
+        //dup2(fileno(g.log_file), STDERR_FILENO);
         dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
-        if (execv("./child", (char* []) { "./child", NULL }))
+        // Pass along verbosity control argument, if applicable
+        if (execv("./child", (char* []) { "./child", g.verbose ? "-v" : NULL, NULL }))
         {
             perror("launch child failed (in child): execv(2) failed");
         }
@@ -191,7 +195,7 @@ int main(int argc, char* argv[])
             }
             break;
         case 'v':
-            // TODO: Implement verbosity control
+            g.verbose = 1;
             break;
         default:
             fprintf(stderr, "invalid option: -%c\n", opt);
@@ -244,6 +248,7 @@ int main(int argc, char* argv[])
 
     // Create server-side resource manager instance
     g.resmgr = resmgr_new(RESMGR_SIDE_SERVER);
+    g.resmgr->verbose = g.verbose;
 
     fprintf(stderr, "press ^C to stop the simulation\n");
 
@@ -299,7 +304,11 @@ int main(int argc, char* argv[])
         // Report child process deaths
         if (g.last_child_proc_dead)
         {
-            printf("oss: process %d has died\n", g.last_child_proc_dead);
+            if (g.verbose)
+            {
+                printf("oss: process %d has died\n", g.last_child_proc_dead);
+            }
+
             g.last_child_proc_dead = 0;
         }
 
@@ -316,8 +325,11 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
-                printf("oss: spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
-                printf("oss: there are now %d processes in the system\n", g.num_child_procs);
+                if (g.verbose)
+                {
+                    printf("oss: spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
+                    printf("oss: there are now %d processes in the system\n", g.num_child_procs);
+                }
             }
 
             // Schedule next spawn time
