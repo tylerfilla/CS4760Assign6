@@ -24,12 +24,25 @@ static struct
     /** The client resource manager instance. */
     resmgr_s* resmgr;
 
+    /** The resources acquired. Used for random releasing. */
+    int acquired_resources[NUM_RESOURCE_CLASSES];
+
+    /** The number of resources acquired. The length of the above list. */
+    int num_acquired_resources;
+
+    /** The resource on which the process is waiting, else -1. Used for simulated sleeping. */
+    int resource_waiting;
+
+    /** The number of instances of the resource being waited on to expect before the request is fulfilled. */
+    int resource_waiting_count;
+
     /** Nonzero once SIGINT received. */
     volatile sig_atomic_t interrupted;
 } g;
 
 static void handle_exit()
 {
+
     // Clean up IPC-heavy components
     if (g.clock)
     {
@@ -67,13 +80,11 @@ int main(int argc, char* argv[])
     // This connects to the existing server resource manager
     g.resmgr = resmgr_new(RESMGR_SIDE_CLIENT);
 
-    // The resource state for this process
-    int acquired_resources[NUM_RESOURCE_CLASSES];
-    int num_acquired_resources = 0;
-    int resource_waiting = -1;
-
     unsigned long next_resource_thing_time = 0;
     unsigned long next_death_check_time = 1000000000;
+
+    // Prepare resource state
+    g.resource_waiting = -1;
 
     while (1)
     {
@@ -96,17 +107,20 @@ int main(int argc, char* argv[])
 
             // If no resources are acquired, take one
             // Otherwise, take a 50% chance of claiming v. releasing
-            if (num_acquired_resources == 0 || rand() % 2 == 0)
+            if (g.num_acquired_resources == 0 || rand() % 2 == 0)
             {
                 // Choose a random resource to acquire
                 int res = rand() % NUM_RESOURCE_CLASSES;
 
                 printf("%d: requesting resource %d\n", getpid(), res);
 
-                // Acquire the resource
+                // Count acquisitions before requesting
+                int before_count = resmgr_count(g.resmgr, res);
+
+                // Request the resource
                 // We just assume this will result in a wait (waits are resolved later on)
                 // For now we just need to unlock the resource manager and regroup
-                if (resmgr_acquire(g.resmgr, res))
+                if (resmgr_request(g.resmgr, res))
                 {
                     if (resmgr_unlock(g.resmgr))
                         return 1;
@@ -114,21 +128,22 @@ int main(int argc, char* argv[])
                     return 1;
                 }
 
-                if (resmgr_has(g.resmgr, res))
+                if (resmgr_count(g.resmgr, res) > before_count)
                 {
-                    printf("%d: immediately acquired resource %d\n", getpid(), res);
+                    printf("%d: acquired resource %d\n", getpid(), res);
 
                     // Mark resource as acquired
-                    acquired_resources[res] = 1;
-                    num_acquired_resources++;
-                    resource_waiting = 0;
+                    g.acquired_resources[res] = 1;
+                    g.num_acquired_resources++;
+                    g.resource_waiting = -1;
                 }
                 else
                 {
-                    printf("%d: resource %d not available, waiting..\n", getpid(), res);
+                    printf("%d: resource %d not acquired immediately\n", getpid(), res);
 
                     // Mark waiting on resource
-                    resource_waiting = res;
+                    g.resource_waiting = res;
+                    g.resource_waiting_count = before_count + 1;
                 }
             }
             else
@@ -137,7 +152,7 @@ int main(int argc, char* argv[])
                 int res = -1;
                 for (int ri = 0; ri < NUM_RESOURCE_CLASSES; ++ri)
                 {
-                    if (acquired_resources[ri])
+                    if (g.acquired_resources[ri])
                     {
                         res = ri;
                     }
@@ -161,18 +176,17 @@ int main(int argc, char* argv[])
                 printf("%d: released resource %d\n", getpid(), res);
 
                 // Mark as released
-                acquired_resources[res] = 0;
-                num_acquired_resources--;
-                resource_waiting = 0;
+                g.acquired_resources[res] = 0;
+                g.num_acquired_resources--;
             }
 
             if (resmgr_unlock(g.resmgr))
                 return 1;
 
             // If we're now waiting on a resource
-            if (resource_waiting)
+            if (g.resource_waiting != -1)
             {
-                int res = resource_waiting;
+                int res = g.resource_waiting;
 
                 printf("%d: waiting for resource %d\n", getpid(), res);
 
@@ -181,8 +195,8 @@ int main(int argc, char* argv[])
                     if (resmgr_lock(g.resmgr))
                         return 1;
 
-                    // Break if we're finally allocated the resource
-                    if (resmgr_has(g.resmgr, res))
+                    // Break if we're finally granted the whole request
+                    if (resmgr_count(g.resmgr, res) >= g.resource_waiting_count)
                     {
                         if (resmgr_unlock(g.resmgr))
                             return 1;
@@ -199,9 +213,9 @@ int main(int argc, char* argv[])
                 printf("%d: acquired resource %d\n", getpid(), res);
 
                 // Mark resource as acquired
-                acquired_resources[res] = 1;
-                num_acquired_resources++;
-                resource_waiting = 0;
+                g.acquired_resources[res] = 1;
+                g.num_acquired_resources++;
+                g.resource_waiting = -1;
             }
 
             // Schedule next resource thing time
@@ -213,7 +227,7 @@ int main(int argc, char* argv[])
         {
             // Take a 20% chance of dying now
             // FIXME: Was this specified anywhere in the assignment?
-            if (rand() % 5 == 0) // NOLINT
+            if (rand() % 5 == 0)
             {
                 printf("%d: dying of natural causes\n", getpid());
                 return 0;

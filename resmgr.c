@@ -24,6 +24,11 @@
 #define MAX_USER_PROCS 18
 
 /**
+ * The maximum number of instances per resource class.
+ */
+#define MAX_INSTANCES 10
+
+/**
  * A process queue for a particular resource class.
  */
 typedef struct
@@ -55,11 +60,11 @@ typedef struct
     /** The process wait queue. */
     __res_queue_s wait_queue;
 
-    /** The processes that have at least one instance of the resource. */
-    int acquired_procs[MAX_USER_PROCS];
+    /** A list of all acquisitions made. Inefficient, but it works. */
+    int acquisitions[MAX_USER_PROCS * MAX_INSTANCES];
 
-    /** The length of the acquired procs list. */
-    unsigned int acquired_procs_length;
+    /** The length of the acquisitions list. */
+    unsigned int num_acquisitions;
 } __rd_s;
 
 struct __resmgr_mem_s
@@ -133,20 +138,21 @@ static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
 
     printf("resmgr: allocating resource %d to process %d\n", res, proc);
 
-    if (rd->acquired_procs_length >= MAX_USER_PROCS)
+    if (rd->num_acquisitions >= MAX_USER_PROCS)
     {
         printf("resmgr: cannot allocate resource %d to process %d: acquisition list full\n", res, proc);
         return 1;
     }
 
     // Add entry to acquisition list
-    rd->acquired_procs[rd->acquired_procs_length++] = proc;
+    rd->acquisitions[rd->num_acquisitions++] = proc;
+    rd->num_acquisitions++;
 
-    // Decrement availability count
+    // Decrement remaining count
     // This is ultimately what limits resources and causes DEADLOCKS
     rd->remaining--;
 
-    printf("resmgr: %d instances of resource %d remain\n", rd->remaining, res);
+    printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
 
     return 0;
 }
@@ -373,7 +379,14 @@ static int resmgr_start_server(resmgr_s* self)
 
         // Generate an initial number of instances between 1 and 10, inclusive
         rd->remaining = 1 + rand() % 10u; // NOLINT
+
+        // Reset acquisitions list
+        for (int ai = 0; ai < MAX_USER_PROCS * MAX_INSTANCES; ++ai)
+        {
+            rd->acquisitions[ai] = -1;
+        }
     }
+
 
     return 0;
 
@@ -568,17 +581,16 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
     // TODO: Resolve deadlocks
 }
 
-int resmgr_acquire(resmgr_s* self, int res)
+int resmgr_request(resmgr_s* self, int res)
 {
     if (res >= NUM_RESOURCE_CLASSES)
         return 1;
 
     pid_t proc = getpid();
-
-    // Get resource descriptor
     __rd_s* rd = &self->__mem->resources[res];
 
-    // If we can allocate immediately
+    // If we can allocate immediately, do so
+    // Otherwise, put process in wait queue
     if (rd->remaining > 0)
     {
         return resmgr_allocate_resource(self, proc, res);
@@ -587,7 +599,7 @@ int resmgr_acquire(resmgr_s* self, int res)
     {
         // Add process to wait queue for desired resource
         // The server-side resource manager will come through soon enough to resolve waits
-        resmgr_wait_enqueue(self, getpid(), res);
+        resmgr_wait_enqueue(self, proc, res);
     }
 
     return 0;
@@ -598,24 +610,58 @@ int resmgr_release(resmgr_s* self, int res)
     if (res >= NUM_RESOURCE_CLASSES)
         return 1;
 
+    pid_t proc = getpid();
+    __rd_s* rd = &self->__mem->resources[res];
+
+    // Scan through all acquisitions
+    for (int i = 0; i < rd->num_acquisitions; ++i)
+    {
+        // If calling process is listed, splice out the first occurrence
+        if (rd->acquisitions[i] == proc)
+        {
+            // If not the end of the list
+            if (i < rd->num_acquisitions - 1)
+            {
+                // Move the subsequent acquisitions down one
+                for (int j = i + 1; j < rd->num_acquisitions; ++j)
+                {
+                    rd->acquisitions[i] = rd->acquisitions[j];
+                }
+            }
+
+            // Decrement acquisition count
+            rd->num_acquisitions--;
+        }
+    }
+
+    // Increment remaining count
+    rd->remaining++;
+
+    printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
+
     return 0;
 }
 
-int resmgr_has(resmgr_s* self, int res)
+int resmgr_count(resmgr_s* self, int res)
 {
     if (res >= NUM_RESOURCE_CLASSES)
         return 0;
 
-    // Get resource descriptor
+    pid_t proc = getpid();
     __rd_s* rd = &self->__mem->resources[res];
 
-    // Scan through all processes
-    for (int i = 0; i < MAX_USER_PROCS; ++i)
+    int count = 0;
+
+    // Scan through all acquisitions
+    for (int i = 0; i < rd->num_acquisitions; ++i)
     {
-        // If calling process is listed
-        if (rd->acquired_procs[i] == getpid())
-            return 1;
+        // If calling process is found
+        if (rd->acquisitions[i] == proc)
+        {
+            // Increment count
+            count++;
+        }
     }
 
-    return 0;
+    return count;
 }
