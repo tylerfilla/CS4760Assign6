@@ -364,6 +364,13 @@ static int resmgr_stop_client(resmgr_s* self)
     if (!self->running)
         return 1;
 
+    // Remove mapping for current process in resource data
+    int proc_idx = resmgr_look_up_proc(self, getpid());
+    if (proc_idx != -1)
+    {
+        resmgr_remove_proc(self, proc_idx);
+    }
+
     errno = 0;
 
     // Detach shared memory segment
@@ -378,9 +385,6 @@ static int resmgr_stop_client(resmgr_s* self)
     self->shmid = -1;
     self->semid = -1;
     self->__mem = NULL;
-
-    // Remove mapping for current process in resource data
-    resmgr_remove_proc(self, resmgr_look_up_proc(self, getpid()));
 
     return 0;
 

@@ -226,6 +226,11 @@ int main(int argc, char* argv[])
         return 2;
     }
 
+    // Signal set for blocking SIGCHLD
+    sigset_t sigset_sigchld;
+    sigemptyset(&sigset_sigchld);
+    sigaddset(&sigset_sigchld, SIGCHLD);
+
     // Register handler for SIGINT signal (^C at terminal)
     struct sigaction sigaction_sigint = {};
     sigaction_sigint.sa_handler = &handle_sigint;
@@ -251,6 +256,9 @@ int main(int argc, char* argv[])
         // Simulate Clock
         //
 
+        // Block SIGCHLD
+        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+
         if (clock_lock(g.clock))
             return 1;
 
@@ -265,9 +273,15 @@ int main(int argc, char* argv[])
         if (clock_unlock(g.clock))
             return 1;
 
+        // Unblock SIGCHLD
+        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
+
         //
         // Simulate OS Duties
         //
+
+        // Block SIGCHLD
+        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
 
         if (resmgr_lock(g.resmgr))
             break;
@@ -278,6 +292,9 @@ int main(int argc, char* argv[])
 
         if (resmgr_unlock(g.resmgr))
             return 1;
+
+        // Unblock SIGCHLD
+        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
 
         // Report child process deaths
         if (g.last_child_proc_dead)
@@ -310,6 +327,9 @@ int main(int argc, char* argv[])
         // Run deadlock detection and resolution once per simulated second
         if (now_time >= next_deadlock_detect_time)
         {
+            // Block SIGCHLD
+            sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+
             if (resmgr_lock(g.resmgr))
                 return 1;
 
@@ -320,6 +340,9 @@ int main(int argc, char* argv[])
 
             if (resmgr_unlock(g.resmgr))
                 return 1;
+
+            // Unblock SIGCHLD
+            sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
 
             // Schedule next deadlock detection time
             next_deadlock_detect_time = now_time + 1000000000u;
