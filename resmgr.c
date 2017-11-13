@@ -635,8 +635,11 @@ int resmgr_release(resmgr_s* self, int res)
         }
     }
 
-    // Increment remaining count
-    rd->remaining++;
+    // Increment remaining count if resource is reusable
+    if (rd->reusable)
+    {
+        rd->remaining++;
+    }
 
     printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
 
