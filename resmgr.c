@@ -12,6 +12,7 @@
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
+#include <signal.h>
 
 #include "resmgr.h"
 
@@ -186,6 +187,26 @@ static pid_t resmgr_wait_dequeue(resmgr_s* self, int res)
 }
 
 /**
+ * Remove the given process from the wait queue on the given resource.
+ */
+static void resmgr_wait_remove(resmgr_s* self, pid_t proc, int res)
+{
+    // This is a very inefficient hack
+    // Take out all pids and put back uninteresting ones, ouch...
+    for (int p = 0; p < self->__mem->resources[res].wait_queue.length; ++p)
+    {
+        pid_t p_proc = resmgr_wait_dequeue(self, res);
+
+        // Skip matching pid
+        // Should this also increment p?
+        if (p_proc == proc)
+            continue;
+
+        resmgr_wait_enqueue(self, p_proc, res);
+    }
+}
+
+/**
  * Immediately allocate a resource to a process. Not always legal, hence wait queues.
  */
 static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
@@ -255,27 +276,6 @@ static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
 
     return 0;
 }
-
-/**
- * Remove the given process from the wait queue on the given resource.
- * /
-static void resmgr_wait_remove(resmgr_s* self, pid_t proc, int res)
-{
-    // This is a very inefficient hack
-    // Take out all pids and put back uninteresting ones, ouch...
-    for (int p = 0; p < self->__mem->resources[res].wait_queue.length; ++p)
-    {
-        pid_t p_proc = resmgr_wait_dequeue(self, res);
-
-        // Skip matching pid
-        // Should this also increment p?
-        if (p_proc == proc)
-            continue;
-
-        resmgr_wait_enqueue(self, p_proc, res);
-    }
-}
-*/
 
 static int resmgr_start_client(resmgr_s* self)
 {
@@ -364,8 +364,16 @@ static int resmgr_stop_client(resmgr_s* self)
     if (!self->running)
         return 1;
 
+    pid_t proc = getpid();
+
+    // Remove all requests in wait for all resources
+    for (int res = 0; res < NUM_RESOURCE_CLASSES; ++res)
+    {
+        resmgr_wait_remove(self, proc, res);
+    }
+
     // Remove mapping for current process in resource data
-    int proc_idx = resmgr_look_up_proc(self, getpid());
+    int proc_idx = resmgr_look_up_proc(self, proc);
     if (proc_idx != -1)
     {
         resmgr_remove_proc(self, proc_idx);
@@ -683,7 +691,7 @@ void resmgr_update(resmgr_s* self)
     }
 }
 
-int request_less_than_available(int* request_matrix, int* avail_vector, int proc)
+static int __request_less_than_available(int* request_matrix, int* avail_vector, int proc)
 {
     int i = 0;
     for (; i < NUM_RESOURCE_CLASSES; i++)
@@ -697,7 +705,8 @@ int request_less_than_available(int* request_matrix, int* avail_vector, int proc
     return i == NUM_RESOURCE_CLASSES;
 }
 
-int deadlock(int* avail_vector, int* request_matrix, int* alloc_matrix)
+static int resmgr_detect_deadlocks(resmgr_s* self, int* avail_vector, int* request_matrix, int* alloc_matrix,
+        pid_t* out_deadlocks, int* out_num_deadlocks)
 {
     //
     // This algo runs a mini simulation to reduce the resource dependency graph. I think.
@@ -729,7 +738,7 @@ int deadlock(int* avail_vector, int* request_matrix, int* alloc_matrix)
             continue;
 
         // If process's requests are satisfiable
-        if (request_less_than_available(request_matrix, work, proc_idx))
+        if (__request_less_than_available(request_matrix, work, proc_idx))
         {
             // Mark the process as finishing
             finish[proc_idx] = 1;
@@ -746,19 +755,24 @@ int deadlock(int* avail_vector, int* request_matrix, int* alloc_matrix)
         }
     }
 
+    // Number of deadlocked processes counted
+    int num_deadlocks = 0;
+
     // Find first process that can't be finished
-    int p;
-    for (p = 0; p < MAX_USER_PROCS; p++)
+    int proc_idx;
+    for (proc_idx = 0; proc_idx < MAX_USER_PROCS; proc_idx++)
     {
-        if (!finish[p])
+        if (!finish[proc_idx])
         {
-            printf("OH NO: %d IS NOT GOING TO FINISH\n", p);
-            break;
+            // Output the affected process
+            out_deadlocks[num_deadlocks++] = resmgr_get_proc(self, proc_idx);
         }
     }
 
+    *out_num_deadlocks = num_deadlocks;
+
     // True if any process failed to finish
-    return p != MAX_USER_PROCS;
+    return num_deadlocks > 0;
 }
 
 void resmgr_resolve_deadlocks(resmgr_s* self)
@@ -827,16 +841,45 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
     // Detect Deadlocked Processes
     //
 
-    if (deadlock(avail_vector, request_matrix, alloc_matrix))
+    // A list of deadlocked processes
+    pid_t deadlocked_procs[MAX_USER_PROCS];
+
+    // The number of deadlocked processes
+    int num_deadlocked_procs = 0;
+
+    // Get all deadlocked processes
+    if (resmgr_detect_deadlocks(self, avail_vector, request_matrix, alloc_matrix, deadlocked_procs,
+            &num_deadlocked_procs))
     {
-        printf("DEADLOCK ALERT OH NO TAKE COVER\n");
+        printf("resmgr: found %d deadlocked processes: ", num_deadlocked_procs);
+        for (int i = 0; i < num_deadlocked_procs; ++i)
+        {
+            printf("%d", deadlocked_procs[i]);
+
+            if (i < num_deadlocked_procs - 1)
+            {
+                printf(",");
+            }
+
+            printf(" ");
+        }
+        printf("\n");
     }
 
     //
     // Resolve Deadlocks
     //
 
-    // TODO: Resolve all deadlocks
+    // Don't need to resolve no deadlocks
+    if (num_deadlocked_procs == 0)
+        return;
+
+    printf("resmgr: trying to resolve deadlock: killing process %d\n", deadlocked_procs[0]);
+
+    // Kill the first deadlocked process
+    kill(deadlocked_procs[0], SIGTERM);
+
+    return;
 }
 
 int resmgr_request(resmgr_s* self, int res)
