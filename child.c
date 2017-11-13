@@ -131,7 +131,7 @@ int main(int argc, char* argv[])
 
                 printf("%d: requesting resource %d\n", getpid(), res);
 
-                // Count acquisitions before requesting
+                // Count allocations before requesting
                 int before_count = resmgr_count(g.resmgr, res);
 
                 // Request the resource
@@ -242,9 +242,9 @@ int main(int argc, char* argv[])
         // Periodically, but after the first simulated second, randomize natural death
         if (now_time >= next_death_check_time)
         {
-            // Take a 20% chance of dying now
+            // Take a 5% chance of dying now
             // FIXME: Was this specified anywhere in the assignment?
-            if (rand() % 5 == 0)
+            if (rand() % 20 == 0)
             {
                 printf("%d: dying of natural causes\n", getpid());
                 return 0;

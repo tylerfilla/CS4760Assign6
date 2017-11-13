@@ -60,17 +60,26 @@ typedef struct
     /** The process wait queue. */
     __res_queue_s wait_queue;
 
-    /** A list of all acquisitions made. Inefficient, but it works. */
-    int acquisitions[MAX_USER_PROCS * MAX_INSTANCES];
+    /** A list of all allocations made, duplication allowed. Inefficient, but it works. */
+    int allocations[MAX_USER_PROCS * MAX_INSTANCES];
 
-    /** The length of the acquisitions list. */
-    unsigned int num_acquisitions;
+    /** The length of the allocations list. */
+    unsigned int num_allocations;
 } __rd_s;
 
 struct __resmgr_mem_s
 {
+    /** A map from internally-recognized process indices to real world pids. */
+    pid_t procs[MAX_USER_PROCS];
+
+    /** The number of recognized processes. */
+    unsigned int num_procs;
+
     /** The resource descriptors. */
     __rd_s resources[NUM_RESOURCE_CLASSES];
+
+    /** Total number of allocations made. */
+    unsigned int stat_num_allocations;
 };
 
 /**
@@ -113,6 +122,54 @@ static pid_t __res_queue_poll(__res_queue_s* queue)
 }
 
 /**
+ * Assign a process index to a new pid.
+ */
+static void resmgr_add_proc(resmgr_s* self, pid_t proc)
+{
+    self->__mem->procs[self->__mem->num_procs++] = proc;
+}
+
+/**
+ * Remove the index mapping for the given pid.
+ */
+static void resmgr_remove_proc(resmgr_s* self, int proc_idx)
+{
+    // If at end of list, do nothing
+    if (proc_idx >= self->__mem->num_procs - 1)
+        return;
+
+    // Move subsequent process mappings down one
+    for (int i = proc_idx; i < self->__mem->num_procs; ++i)
+    {
+        self->__mem->procs[i] = self->__mem->procs[i + 1];
+    }
+
+    // Decrement process count
+    self->__mem->num_procs--;
+}
+
+static pid_t resmgr_get_proc(resmgr_s* self, int proc_idx)
+{
+    return self->__mem->procs[proc_idx];
+}
+
+/**
+ * Do a reverse lookup to get the process index for the given pid.
+ */
+static int resmgr_look_up_proc(resmgr_s* self, pid_t proc)
+{
+    for (int proc_idx = 0; proc_idx < self->__mem->num_procs; ++proc_idx)
+    {
+        if (self->__mem->procs[proc_idx] == proc)
+        {
+            return proc_idx;
+        }
+    }
+
+    return -1;
+}
+
+/**
  * Enqueue the given process into the wait queue on the given resource.
  */
 static void resmgr_wait_enqueue(resmgr_s* self, pid_t proc, int res)
@@ -138,21 +195,63 @@ static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
 
     printf("resmgr: allocating resource %d to process %d\n", res, proc);
 
-    if (rd->num_acquisitions >= MAX_USER_PROCS)
+    if (rd->num_allocations >= MAX_USER_PROCS)
     {
         printf("resmgr: cannot allocate resource %d to process %d: acquisition list full\n", res, proc);
         return 1;
     }
 
     // Add entry to acquisition list
-    rd->acquisitions[rd->num_acquisitions++] = proc;
-    rd->num_acquisitions++;
+    rd->allocations[rd->num_allocations++] = proc;
+    rd->num_allocations++;
 
     // Decrement remaining count
     // This is ultimately what limits resources and causes DEADLOCKS
     rd->remaining--;
 
     printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
+
+    self->__mem->stat_num_allocations++;
+
+    // Print allocation table after every 20 allocations
+    if (self->__mem->stat_num_allocations > 0 && self->__mem->stat_num_allocations % 20 == 0)
+    {
+        // Header
+        printf("PID      Index ");
+        for (int p_res = 0; p_res < NUM_RESOURCE_CLASSES; ++p_res)
+        {
+            printf("%3d ", p_res);
+        }
+        printf("\n");
+
+        // Body
+        for (int proc_idx = 0; proc_idx < self->__mem->num_procs; ++proc_idx)
+        {
+            pid_t p_proc = self->__mem->procs[proc_idx];
+
+            printf("%8d %5d", p_proc, proc_idx);
+            for (int p_res = 0; p_res < NUM_RESOURCE_CLASSES; ++p_res)
+            {
+                // Get resource descriptor
+                __rd_s* p_rd = &self->__mem->resources[p_res];
+
+                // Count corresponding allocations
+                int num_instances_allocated = 0;
+                for (int i = 0; i < p_rd->num_allocations; ++i)
+                {
+                    // If calling process is found
+                    if (p_rd->allocations[i] == p_proc)
+                    {
+                        // Increment count
+                        num_instances_allocated++;
+                    }
+                }
+
+                printf("%3d ", num_instances_allocated);
+            }
+            printf("\n");
+        }
+    }
 
     return 0;
 }
@@ -240,6 +339,9 @@ static int resmgr_start_client(resmgr_s* self)
     self->semid = semid;
     self->__mem = shm;
 
+    // Map the calling process into the resource data
+    resmgr_add_proc(self, getpid());
+
     return 0;
 
 fail_sem:
@@ -276,6 +378,9 @@ static int resmgr_stop_client(resmgr_s* self)
     self->shmid = -1;
     self->semid = -1;
     self->__mem = NULL;
+
+    // Remove mapping for current process in resource data
+    resmgr_remove_proc(self, resmgr_look_up_proc(self, getpid()));
 
     return 0;
 
@@ -381,10 +486,10 @@ static int resmgr_start_server(resmgr_s* self)
         // Generate an initial number of instances between 1 and 10, inclusive
         rd->remaining = 1 + (unsigned int) (rand() % MAX_INSTANCES);
 
-        // Reset acquisitions list
+        // Reset allocations list
         for (int ai = 0; ai < MAX_USER_PROCS * MAX_INSTANCES; ++ai)
         {
-            rd->acquisitions[ai] = -1;
+            rd->allocations[ai] = -1;
         }
     }
 
@@ -574,74 +679,82 @@ void resmgr_update(resmgr_s* self)
     }
 }
 
-int request_less_than_available(int* request_matrix, int* avail_vector, int proc, int num_resources)
+int request_less_than_available(int* request_matrix, int* avail_vector, int proc)
 {
     int i = 0;
-    for (; i < num_resources; i++)
+    for (; i < NUM_RESOURCE_CLASSES; i++)
     {
         // If resource is over-requested
-        if (request_matrix[proc * num_resources + i] > avail_vector[i])
+        if (request_matrix[proc * NUM_RESOURCE_CLASSES + i] > avail_vector[i])
             break;
     }
 
     // True if no resource is over-requested
-    return i == num_resources;
+    return i == NUM_RESOURCE_CLASSES;
 }
 
-int deadlock(int* avail_vector, int num_resources, int num_procs, int* request_matrix, int* alloc_matrix)
+int deadlock(int* avail_vector, int* request_matrix, int* alloc_matrix)
 {
     //
     // This algo runs a mini simulation to reduce the resource dependency graph. I think.
     //
 
     // Possible scratch space?
-    int work[num_resources];
+    int work[NUM_RESOURCE_CLASSES];
 
     // Processes that finished in simulation
-    int finish[num_procs];
+    int finish[MAX_USER_PROCS];
 
     // Copy available into work
-    for (int i = 0; i < num_resources; ++i)
+    for (int i = 0; i < NUM_RESOURCE_CLASSES; ++i)
     {
         work[i] = avail_vector[i];
     }
 
     // Clear finish
-    for (int i = 0; i < num_procs; ++i)
+    for (int i = 0; i < MAX_USER_PROCS; ++i)
     {
         finish[i] = 0;
     }
 
     // Iterate over processes (by index, not pid)
-    for (int proc_idx = 0; proc_idx < num_procs; proc_idx++)
+    for (int proc_idx = 0; proc_idx < MAX_USER_PROCS; ++proc_idx)
     {
         // If process finished, go to next process
         if (finish[proc_idx])
             continue;
 
-        if (request_less_than_available(request_matrix, work, proc_idx, num_resources))
+        // If process's requests are satisfiable
+        if (request_less_than_available(request_matrix, work, proc_idx))
         {
+            // Mark the process as finishing
             finish[proc_idx] = 1;
 
-            for (int i = 0; i < num_resources; i++)
+            // Add to work vector the process's row from the allocation matrix
+            for (int res = 0; res < NUM_RESOURCE_CLASSES; ++res)
             {
-                work[i] += alloc_matrix[proc_idx * num_resources + i];
+                work[res] += alloc_matrix[proc_idx * NUM_RESOURCE_CLASSES + res];
             }
 
+            // Perform another scan over the processes
+            // This gets incremented to zero for the next loop iteration
             proc_idx = -1;
         }
     }
 
-    // Find any process that didn't finish
+    // Find first process that can't be finished
     int p;
-    for (p = 0; p < num_procs; p++)
+    for (p = 0; p < MAX_USER_PROCS; p++)
     {
         if (!finish[p])
+        {
+            printf("OH NO: %d IS NOT GOING TO FINISH\n", p);
             break;
+        }
     }
 
     // True if any process failed to finish
-    return p != num_procs;
+    return p != MAX_USER_PROCS;
 }
 
 void resmgr_resolve_deadlocks(resmgr_s* self)
@@ -649,18 +762,77 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
     if (self->side != RESMGR_SIDE_SERVER)
         return;
 
-    int* avail_vector = malloc(0);
-    int* request_matrix = malloc(0);
-    int* alloc_matrix = malloc(0);
+    //
+    // Collect Data
+    //
 
-    if (deadlock(avail_vector, NUM_RESOURCE_CLASSES, MAX_USER_PROCS, request_matrix, alloc_matrix))
+    // Required data: allocation matrix, request matrix, and availability vector
+    int alloc_matrix[MAX_USER_PROCS * NUM_RESOURCE_CLASSES];
+    int request_matrix[MAX_USER_PROCS * NUM_RESOURCE_CLASSES];
+    int avail_vector[NUM_RESOURCE_CLASSES];
+
+    // Populate allocation and request matrices
+    for (int res = 0; res < NUM_RESOURCE_CLASSES; ++res)
+    {
+        // Get resource descriptor
+        __rd_s* rd = &self->__mem->resources[res];
+
+        for (int proc_idx = 0; proc_idx < MAX_USER_PROCS; ++proc_idx)
+        {
+            pid_t proc = resmgr_get_proc(self, proc_idx);
+
+            // Count corresponding allocations
+            int num_instances_allocated = 0;
+            for (int i = 0; i < rd->num_allocations; ++i)
+            {
+                // If calling process is found
+                if (rd->allocations[i] == proc)
+                {
+                    // Increment count
+                    num_instances_allocated++;
+                }
+            }
+
+            // Populate allocation matrix
+            alloc_matrix[proc_idx * NUM_RESOURCE_CLASSES + res] = num_instances_allocated;
+
+            // Count corresponding waiting requests
+            int num_instances_requested = 0;
+            for (int i = 0; i < rd->wait_queue.length; ++i)
+            {
+                // If calling process is found
+                if (rd->wait_queue.pids[i] == proc)
+                {
+                    // Increment count
+                    num_instances_requested++;
+                }
+            }
+
+            // Populate request matrix
+            request_matrix[proc_idx * NUM_RESOURCE_CLASSES + res] = num_instances_requested;
+        }
+    }
+
+    // Populate availability vector
+    for (int res = 0; res < NUM_RESOURCE_CLASSES; ++res)
+    {
+        avail_vector[res] = self->__mem->resources[res].remaining;
+    }
+
+    //
+    // Detect Deadlocked Processes
+    //
+
+    if (deadlock(avail_vector, request_matrix, alloc_matrix))
     {
         printf("DEADLOCK ALERT OH NO TAKE COVER\n");
     }
 
-    free(avail_vector);
-    free(request_matrix);
-    free(alloc_matrix);
+    //
+    // Resolve Deadlocks
+    //
+
+    // TODO: Resolve all deadlocks
 }
 
 int resmgr_request(resmgr_s* self, int res)
@@ -695,31 +867,33 @@ int resmgr_release(resmgr_s* self, int res)
     pid_t proc = getpid();
     __rd_s* rd = &self->__mem->resources[res];
 
-    // Scan through all acquisitions
-    for (int i = 0; i < rd->num_acquisitions; ++i)
+    // Scan through all allocations
+    for (int i = 0; i < rd->num_allocations; ++i)
     {
         // If calling process is listed, splice out the first occurrence
-        if (rd->acquisitions[i] == proc)
+        if (rd->allocations[i] == proc)
         {
             // If not the end of the list
-            if (i < rd->num_acquisitions - 1)
+            if (i < rd->num_allocations - 1)
             {
-                // Move the subsequent acquisitions down one
-                for (int j = i + 1; j < rd->num_acquisitions; ++j)
+                // Move the subsequent allocations down one
+                for (int j = i; j < rd->num_allocations; ++j)
                 {
-                    rd->acquisitions[i] = rd->acquisitions[j];
+                    rd->allocations[i] = rd->allocations[j + 1];
                 }
             }
 
             // Decrement acquisition count
-            rd->num_acquisitions--;
-        }
-    }
+            rd->num_allocations--;
 
-    // Increment remaining count if resource is reusable
-    if (rd->reusable)
-    {
-        rd->remaining++;
+            // Increment remaining count if resource is reusable
+            if (rd->reusable)
+            {
+                rd->remaining++;
+            }
+
+            break;
+        }
     }
 
     printf("resmgr: %d instances of resource %d now remain\n", rd->remaining, res);
@@ -737,11 +911,11 @@ int resmgr_count(resmgr_s* self, int res)
 
     int count = 0;
 
-    // Scan through all acquisitions
-    for (int i = 0; i < rd->num_acquisitions; ++i)
+    // Scan through all allocations
+    for (int i = 0; i < rd->num_allocations; ++i)
     {
         // If calling process is found
-        if (rd->acquisitions[i] == proc)
+        if (rd->allocations[i] == proc)
         {
             // Increment count
             count++;
