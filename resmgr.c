@@ -574,19 +574,30 @@ void resmgr_update(resmgr_s* self)
     }
 }
 
-int req_lt_avail(int* req_vector, int* avail, int pnum, int num_resources)
+int request_less_than_available(int* request_matrix, int* avail_vector, int proc, int num_resources)
 {
     int i = 0;
     for (; i < num_resources; i++)
-        if (req_vector[pnum * num_resources + i] > avail[i])
+    {
+        // If resource is over-requested
+        if (request_matrix[proc * num_resources + i] > avail_vector[i])
             break;
+    }
 
+    // True if no resource is over-requested
     return i == num_resources;
 }
 
 int deadlock(int* avail_vector, int num_resources, int num_procs, int* request_matrix, int* alloc_matrix)
 {
+    //
+    // This algo runs a mini simulation to reduce the resource dependency graph. I think.
+    //
+
+    // Possible scratch space?
     int work[num_resources];
+
+    // Processes that finished in simulation
     int finish[num_procs];
 
     // Copy available into work
@@ -601,28 +612,35 @@ int deadlock(int* avail_vector, int num_resources, int num_procs, int* request_m
         finish[i] = 0;
     }
 
-    int p = 0;
-
-    for (; p < num_procs; p++) // For each process
+    // Iterate over processes (by index, not pid)
+    for (int proc_idx = 0; proc_idx < num_procs; proc_idx++)
     {
-        if (finish[p])
+        // If process finished, go to next process
+        if (finish[proc_idx])
             continue;
 
-        if (req_lt_avail(request_matrix, work, p, num_resources))
+        if (request_less_than_available(request_matrix, work, proc_idx, num_resources))
         {
-            finish[p] = 1;
+            finish[proc_idx] = 1;
 
             for (int i = 0; i < num_resources; i++)
-                work[i] += alloc_matrix[p * num_resources + i];
+            {
+                work[i] += alloc_matrix[proc_idx * num_resources + i];
+            }
 
-            p = -1;
+            proc_idx = -1;
         }
     }
 
+    // Find any process that didn't finish
+    int p;
     for (p = 0; p < num_procs; p++)
+    {
         if (!finish[p])
             break;
+    }
 
+    // True if any process failed to finish
     return p != num_procs;
 }
 
@@ -631,9 +649,18 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
     if (self->side != RESMGR_SIDE_SERVER)
         return;
 
-    deadlock()
+    int* avail_vector = malloc(0);
+    int* request_matrix = malloc(0);
+    int* alloc_matrix = malloc(0);
 
-    // TODO: Resolve deadlocks
+    if (deadlock(avail_vector, NUM_RESOURCE_CLASSES, MAX_USER_PROCS, request_matrix, alloc_matrix))
+    {
+        printf("DEADLOCK ALERT OH NO TAKE COVER\n");
+    }
+
+    free(avail_vector);
+    free(request_matrix);
+    free(alloc_matrix);
 }
 
 int resmgr_request(resmgr_s* self, int res)
