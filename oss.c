@@ -174,7 +174,7 @@ int main(int argc, char* argv[])
 
     // Handle command-line options
     int opt;
-    while ((opt = getopt(argc, argv, "hlv:")) != -1)
+    while ((opt = getopt(argc, argv, "hl:v:")) != -1)
     {
         switch (opt)
         {
