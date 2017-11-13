@@ -574,10 +574,64 @@ void resmgr_update(resmgr_s* self)
     }
 }
 
+int req_lt_avail(int* req_vector, int* avail, int pnum, int num_resources)
+{
+    int i = 0;
+    for (; i < num_resources; i++)
+        if (req_vector[pnum * num_resources + i] > avail[i])
+            break;
+
+    return i == num_resources;
+}
+
+int deadlock(int* avail_vector, int num_resources, int num_procs, int* request_matrix, int* alloc_matrix)
+{
+    int work[num_resources];
+    int finish[num_procs];
+
+    // Copy available into work
+    for (int i = 0; i < num_resources; ++i)
+    {
+        work[i] = avail_vector[i];
+    }
+
+    // Clear finish
+    for (int i = 0; i < num_procs; ++i)
+    {
+        finish[i] = 0;
+    }
+
+    int p = 0;
+
+    for (; p < num_procs; p++) // For each process
+    {
+        if (finish[p])
+            continue;
+
+        if (req_lt_avail(request_matrix, work, p, num_resources))
+        {
+            finish[p] = 1;
+
+            for (int i = 0; i < num_resources; i++)
+                work[i] += alloc_matrix[p * num_resources + i];
+
+            p = -1;
+        }
+    }
+
+    for (p = 0; p < num_procs; p++)
+        if (!finish[p])
+            break;
+
+    return p != num_procs;
+}
+
 void resmgr_resolve_deadlocks(resmgr_s* self)
 {
     if (self->side != RESMGR_SIDE_SERVER)
         return;
+
+    deadlock()
 
     // TODO: Resolve deadlocks
 }
