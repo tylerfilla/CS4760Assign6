@@ -52,6 +52,10 @@ The program will run with the assigned defaults if you run the following:
 
 $ ./oss
 
+To run in verbose mode to see what is happening internally, use -v:
+
+$ ./oss -v
+
 Interrupt the process with ^C on a terminal to stop the simulation.
 
 Cleanup
