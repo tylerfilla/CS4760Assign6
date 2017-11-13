@@ -143,4 +143,11 @@ int resmgr_release(resmgr_s* resmgr, int res);
  */
 int resmgr_count(resmgr_s* resmgr, int res);
 
+/**
+ * Dump statistics to stderr.
+ *
+ * @param resmgr The resource manager instance
+ */
+void resmgr_dump(resmgr_s* resmgr);
+
 #endif // #ifndef RESMGR_H

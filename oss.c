@@ -68,6 +68,9 @@ static void handle_exit()
             fprintf(stderr, "\n--- interrupted; dumping information about last run ---\n");
             fprintf(stderr, "log file: %s\n", g.log_file_path);
             fprintf(stderr, "time now: %ds, %dns\n", stop_seconds, stop_nanos);
+
+            // Print resource statistics
+            resmgr_dump(g.resmgr);
         }
     }
 
@@ -124,9 +127,8 @@ static pid_t launch_child()
     {
         // Fork succeeded, now in child
 
-        // Redirect child stderr and stdout to log file
+        // Redirect child stdout to log file
         // This is a hack to allow logging from children without communicating the log fd
-        //dup2(fileno(g.log_file), STDERR_FILENO);
         dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
@@ -178,7 +180,7 @@ int main(int argc, char* argv[])
 
     // Handle command-line options
     int opt;
-    while ((opt = getopt(argc, argv, "hl:v:")) != -1)
+    while ((opt = getopt(argc, argv, "hl:v")) != -1)
     {
         switch (opt)
         {

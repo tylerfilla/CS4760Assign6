@@ -81,6 +81,15 @@ struct __resmgr_mem_s
 
     /** Total number of allocations made. */
     unsigned int stat_num_allocations;
+
+    /** Total number of deaths from deadlock resolver. */
+    unsigned int stat_total_dedeadlocked;
+
+    /** Total number of natural deaths. */
+    unsigned int stat_total_natural_deaths;
+
+    /** Total number of processes deadlocked. */
+    unsigned int stat_total_deadlocked;
 };
 
 /**
@@ -391,6 +400,9 @@ static int resmgr_stop_client(resmgr_s* self)
         resmgr_remove_proc(self, proc_idx);
     }
 
+    // Increment natural deaths
+    self->__mem->stat_total_natural_deaths++;
+
     errno = 0;
 
     // Detach shared memory segment
@@ -657,6 +669,9 @@ int resmgr_lock(resmgr_s* resmgr)
     semop(resmgr->semid, &buf, 1);
     if (errno)
     {
+        if (errno == EINTR || errno == EINVAL || errno == EIDRM)
+            return 1;
+
         perror("resource manager lock: unable to decrement sem: semop(2) failed");
         return 1;
     }
@@ -881,6 +896,8 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
         }
     }
 
+    self->__mem->stat_total_deadlocked += num_deadlocked_procs;
+
     //
     // Resolve Deadlocks
     //
@@ -894,6 +911,9 @@ void resmgr_resolve_deadlocks(resmgr_s* self)
 
     // Kill the first deadlocked process
     kill(deadlocked_procs[0], SIGTERM);
+
+    // Increment deadlock deaths
+    self->__mem->stat_total_dedeadlocked++;
 
     return;
 }
@@ -989,4 +1009,13 @@ int resmgr_count(resmgr_s* self, int res)
     }
 
     return count;
+}
+
+void resmgr_dump(resmgr_s* self)
+{
+    fprintf(stderr, "total resource allocations made: %d\n", self->__mem->stat_num_allocations);
+    fprintf(stderr, "num user procs killed by deadlock resolver: %d\n", self->__mem->stat_total_dedeadlocked);
+    fprintf(stderr, "num user procs naturally died: %d\n", self->__mem->stat_total_natural_deaths);
+    fprintf(stderr, "avg %% killed in deadlock: %.2f\n",
+            100 * (self->__mem->stat_total_dedeadlocked / (float) self->__mem->stat_total_deadlocked));
 }
