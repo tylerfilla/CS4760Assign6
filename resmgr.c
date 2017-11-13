@@ -159,7 +159,7 @@ static int resmgr_allocate_resource(resmgr_s* self, pid_t proc, int res)
 
 /**
  * Remove the given process from the wait queue on the given resource.
- */
+ * /
 static void resmgr_wait_remove(resmgr_s* self, pid_t proc, int res)
 {
     // This is a very inefficient hack
@@ -176,6 +176,7 @@ static void resmgr_wait_remove(resmgr_s* self, pid_t proc, int res)
         resmgr_wait_enqueue(self, p_proc, res);
     }
 }
+*/
 
 static int resmgr_start_client(resmgr_s* self)
 {
@@ -365,7 +366,7 @@ static int resmgr_start_server(resmgr_s* self)
     int res_max_reusable = (int) (0.25 * NUM_RESOURCE_CLASSES);
 
     // Compute number of reusable resources
-    int res_num_reusable = res_min_reusable + rand() % (res_max_reusable - res_min_reusable + 1); // NOLINT
+    int res_num_reusable = res_min_reusable + rand() % (res_max_reusable - res_min_reusable + 1);
 
     // Configure each resource class
     for (int ri = 0; ri < NUM_RESOURCE_CLASSES; ++ri)
@@ -378,7 +379,7 @@ static int resmgr_start_server(resmgr_s* self)
         rd->reusable = res_max_reusable > 0 ? res_num_reusable-- : 0;
 
         // Generate an initial number of instances between 1 and 10, inclusive
-        rd->remaining = 1 + rand() % 10u; // NOLINT
+        rd->remaining = 1 + (unsigned int) (rand() % MAX_INSTANCES);
 
         // Reset acquisitions list
         for (int ai = 0; ai < MAX_USER_PROCS * MAX_INSTANCES; ++ai)

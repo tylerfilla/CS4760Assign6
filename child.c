@@ -42,6 +42,23 @@ static struct
 
 static void handle_exit()
 {
+    // If some allocated resources remain
+    if (g.num_acquired_resources > 0)
+    {
+        if (resmgr_lock(g.resmgr))
+            return;
+
+        // Release all acquired resources
+        for (int ri = 0; ri < g.num_acquired_resources; ++ri)
+        {
+            int res = g.acquired_resources[ri];
+            printf("%d: exiting: releasing resource %d\n", getpid(), res);
+            resmgr_release(g.resmgr, res);
+        }
+
+        if (resmgr_unlock(g.resmgr))
+            return;
+    }
 
     // Clean up IPC-heavy components
     if (g.clock)
