@@ -10,7 +10,7 @@ CFLAGS=-Wall -std=gnu99
 LDFLAGS=
 
 EXECUTABLES=child oss
-LIBRARIES=clock.a
+LIBRARIES=clock.a memmgr.a
 
 #
 # Patterns
