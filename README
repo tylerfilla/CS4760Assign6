@@ -1,17 +1,11 @@
 Tyler Filla
 CS 4760
-Assignment 5
+Assignment 6
 
 Preamble
 ========
 
-This project simulates resource allocation and deadlock detection/resolution. It is similar in structure to my previous
-projects. Simulated user processes are spawned as required and the deadlock detection algorithm from the notes is
-periodically swept through the system to identify and break sticking points. The algorithm was modified to report all
-the involved processes instead of simply telling if there are any processes involved in a deadlock. It cannot tell if
-there are multiple cycles in the resource dependency graph, but this is irrelevant for the project.
-
-No special policy is used to kill processes involved in deadlocks. Simply the first to be found is killed first.
+[ preamble ]
 
 Directory Structure
 ===================
