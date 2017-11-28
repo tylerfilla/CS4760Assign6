@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #include "clock.h"
-#include "resmgr.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
 #define MAX_PROCESSES 18
@@ -32,9 +31,6 @@ static struct
 
     /** The outgoing clock instance. */
     clock_s* clock;
-
-    /** The resource manager instance. */
-    resmgr_s* resmgr;
 
     /** The current number of child processes. */
     volatile sig_atomic_t num_child_procs;
@@ -68,9 +64,6 @@ static void handle_exit()
             fprintf(stderr, "\n--- interrupted; dumping information about last run ---\n");
             fprintf(stderr, "log file: %s\n", g.log_file_path);
             fprintf(stderr, "time now: %ds, %dns\n", stop_seconds, stop_nanos);
-
-            // Print resource statistics
-            resmgr_dump(g.resmgr);
         }
     }
 
@@ -78,10 +71,6 @@ static void handle_exit()
     if (g.clock)
     {
         clock_delete(g.clock);
-    }
-    if (g.resmgr)
-    {
-        resmgr_delete(g.resmgr);
     }
 
     // Close log file
@@ -248,14 +237,9 @@ int main(int argc, char* argv[])
     // Create and start outgoing clock
     g.clock = clock_new(CLOCK_MODE_OUT);
 
-    // Create server-side resource manager instance
-    g.resmgr = resmgr_new(RESMGR_SIDE_SERVER);
-    g.resmgr->verbose = g.verbose;
-
     fprintf(stderr, "press ^C to stop the simulation\n");
 
     unsigned long next_spawn_time = 0;
-    unsigned long next_deadlock_detect_time = 0;
 
     while (1)
     {
@@ -286,22 +270,6 @@ int main(int argc, char* argv[])
         //
         // Simulate OS Duties
         //
-
-        // Block SIGCHLD
-        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
-
-        if (resmgr_lock(g.resmgr))
-            break;
-
-        // Update the resource manager
-        // This must be done frequently to keep everything consistent
-        resmgr_update(g.resmgr);
-
-        if (resmgr_unlock(g.resmgr))
-            return 1;
-
-        // Unblock SIGCHLD
-        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
 
         // Report child process deaths
         if (g.last_child_proc_dead)
@@ -336,30 +304,6 @@ int main(int argc, char* argv[])
 
             // Schedule next spawn time
             next_spawn_time = now_time + (rand() % 500) * 1000000ul;
-        }
-
-        // Run deadlock detection and resolution once per simulated second
-        if (now_time >= next_deadlock_detect_time)
-        {
-            // Block SIGCHLD
-            sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
-
-            if (resmgr_lock(g.resmgr))
-                return 1;
-
-            printf("oss: running deadlock detection and resolution (%ds %dns)\n", now_seconds, now_nanos);
-
-            // Detect and resolve deadlocks
-            resmgr_resolve_deadlocks(g.resmgr);
-
-            if (resmgr_unlock(g.resmgr))
-                return 1;
-
-            // Unblock SIGCHLD
-            sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
-
-            // Schedule next deadlock detection time
-            next_deadlock_detect_time = now_time + 1000000000u;
         }
 
         // Break loop on interrupt

@@ -22,10 +22,6 @@ Project Root
  |
  +-- oss.c          (the main file for the oss program)
  |
- +-- resmgr.c       (the main file for the resource manager module library)
- |
- +-- resmgr.h       (the corresponding header file for resmgr.c)
- |
  +-- README
 
 Building
