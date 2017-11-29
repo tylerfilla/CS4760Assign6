@@ -58,7 +58,7 @@ static int memmgr_start_ua(memmgr_s* self)
     }
 
     // Attach shared memory segment as read-only
-    shm = shmat(shmid, NULL, SHM_RDONLY);
+    shm = shmat(shmid, NULL, 0);
     if (errno)
     {
         perror("start memory manager user agent: unable to attach shm: shmat(2) failed");
