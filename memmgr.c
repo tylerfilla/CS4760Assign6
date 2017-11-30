@@ -69,7 +69,7 @@ typedef struct
 typedef struct
 {
     /** The page frames. */
-    __page_frame frames[9001];
+    __page_frame frames[USER_PROCESS_VM_SIZE / PAGE_SIZE];
 } __page_table;
 
 /**
