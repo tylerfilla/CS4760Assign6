@@ -383,9 +383,6 @@ int clock_lock(clock_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        if (errno == EINTR || errno == EINVAL || errno == EIDRM)
-            return 1;
-
         perror("clock lock: unable to decrement sem: semop(2) failed");
         return 1;
     }

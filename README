@@ -8,6 +8,12 @@ Preamble
 Since the simulated processes don't have a page table register (research), I map the processes' pids to page tables in
 a shared memory array.
 
+User mode reads and writes are coarsely simulated. There is no data read/written, but a type called ptr_vm_t is used to
+"point to" a location in simulated virtual memory.
+
+Since no scheduling is simulated, oss really has no control over the children, so suspension is simulated in the
+children when memmgr informs them of page faults.
+
 Directory Structure
 ===================
 
@@ -18,6 +24,8 @@ Project Root
  +-- clock.c        (the main file for the clock library)
  |
  +-- clock.h        (the corresponding header file for clock.c)
+ |
+ +-- config.h       (a header file with global configuration settings)
  |
  +-- Makefile
  |

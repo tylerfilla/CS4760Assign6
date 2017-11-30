@@ -31,7 +31,7 @@
 #define SYSTEM_MEMORY_SIZE (256 * 1024)
 
 /**
- * The size, in bytes, of each process's virtual memory address spaces.
+ * The size, in bytes, of each process's virtual address space.
  * Assigned: 32 KiB
  */
 #define USER_PROCESS_VM_SIZE (32 * 1024)
@@ -129,6 +129,18 @@ static int memmgr_unmap_proc(memmgr_s* self, pid_t proc)
     self->__mem->num_procs_mapped--;
 
     return 0;
+}
+
+static __page_table* memmgr_get_page_table(memmgr_s* self, pid_t proc)
+{
+    // Loop up page table index
+    int page_table_idx = memmgr_look_up_proc(self, proc);
+
+    if (page_table_idx == -1)
+        return NULL;
+
+    // Get actual page table
+    return &self->__mem->page_tables[page_table_idx];
 }
 
 /**
@@ -486,9 +498,6 @@ int memmgr_lock(memmgr_s* self)
     semop(self->semid, &buf, 1);
     if (errno)
     {
-        if (errno == EINTR || errno == EINVAL || errno == EIDRM)
-            return 1;
-
         perror("memory manager lock: unable to decrement sem: semop(2) failed");
         return 1;
     }
@@ -508,6 +517,32 @@ int memmgr_unlock(memmgr_s* self)
         perror("memory manager unlock: unable to increment sem: semop(2) failed");
         return 1;
     }
+
+    return 0;
+}
+
+int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
+{
+    // Get user process pid
+    pid_t proc = getpid();
+
+    // Get page table
+    __page_table* page_table = memmgr_get_page_table(self, proc);
+
+    // TODO: Do read
+
+    return 0;
+}
+
+int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
+{
+    // Get user process pid
+    pid_t proc = getpid();
+
+    // Get page table
+    __page_table* page_table = memmgr_get_page_table(self, proc);
+
+    // TODO: Do write
 
     return 0;
 }

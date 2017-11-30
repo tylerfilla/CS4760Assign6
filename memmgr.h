@@ -100,4 +100,26 @@ int memmgr_lock(memmgr_s* memmgr);
  */
 int memmgr_unlock(memmgr_s* memmgr);
 
+/**
+ * Simulate a read at the given virtual memory address.
+ *
+ * User mode. TODO: Provide suspend feedback
+ *
+ * @param memmgr The memory manager instance
+ * @param ptr The virtual memory pointer
+ * @return Zero on success, otherwise nonzero
+ */
+int memmgr_read_ptr(memmgr_s* memmgr, ptr_vm_t ptr);
+
+/**
+ * Simulate a write at the given virtual memory address. The written value is not simulated.
+ *
+ * User mode. TODO: Provide suspend feedback
+ *
+ * @param memmgr The memory manager instance
+ * @param ptr The virtual memory pointer
+ * @return Zero on success, otherwise nonzero
+ */
+int memmgr_write_ptr(memmgr_s* memmgr, ptr_vm_t ptr);
+
 #endif // #ifndef MEMMGR_H
