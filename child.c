@@ -12,11 +12,15 @@
 #include <unistd.h>
 
 #include "clock.h"
+#include "memmgr.h"
 
 static struct
 {
     /** The incoming clock instance. */
     clock_s* clock;
+
+    /** The memory manager user agent. */
+    memmgr_s* memmgr;
 
     /** Nonzero once SIGINT received. */
     volatile sig_atomic_t interrupted;
@@ -28,6 +32,10 @@ static void handle_exit()
     if (g.clock)
     {
         clock_delete(g.clock);
+    }
+    if (g.memmgr)
+    {
+        memmgr_delete(g.memmgr);
     }
 }
 
@@ -53,7 +61,8 @@ int main(int argc, char* argv[])
     // Create and start incoming (read-only) clock
     g.clock = clock_new(CLOCK_MODE_IN);
 
-    unsigned long next_death_check_time = 1000000000;
+    // Create memory manager user agent
+    g.memmgr = memmgr_new(MEMMGR_MODE_UA);
 
     while (1)
     {
@@ -68,20 +77,7 @@ int main(int argc, char* argv[])
         if (clock_unlock(g.clock))
             return 1;
 
-        // Periodically, but after the first simulated second, randomize natural death
-        if (now_time >= next_death_check_time)
-        {
-            // Take a 5% chance of dying now
-            // FIXME: Was this specified anywhere in the assignment?
-            if (rand() % 20 == 0)
-            {
-                printf("%d: dying of natural causes\n", getpid());
-                return 0;
-            }
-
-            // Schedule next death check time
-            next_death_check_time = now_time + (rand() % 250) * 1000000ul;
-        }
+        // TODO: Do client stuff somehow
 
         // Break loop on interrupt
         if (g.interrupted)

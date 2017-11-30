@@ -48,6 +48,16 @@ typedef struct
 } memmgr_s;
 
 /**
+ * A simulated virtual memory pointer.
+ */
+typedef unsigned long ptr_vm_t;
+
+/**
+ * A simulated physical memory pointer.
+ */
+typedef unsigned long ptr_phy_t;
+
+/**
  * Create a memory manager instance.
  */
 #define memmgr_new(mode) memmgr_construct(malloc(sizeof(memmgr_s)), (mode))

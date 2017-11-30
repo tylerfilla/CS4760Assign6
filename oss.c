@@ -14,9 +14,10 @@
 #include <unistd.h>
 
 #include "clock.h"
+#include "config.h"
+#include "memmgr.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
-#define MAX_PROCESSES 18
 
 static struct
 {
@@ -28,6 +29,9 @@ static struct
 
     /** The outgoing clock instance. */
     clock_s* clock;
+
+    /** The kernel memory manager. */
+    memmgr_s* memmgr;
 
     /** The current number of child processes. */
     volatile sig_atomic_t num_child_procs;
@@ -69,6 +73,10 @@ static void handle_exit()
     {
         clock_delete(g.clock);
     }
+    if (g.memmgr)
+    {
+        memmgr_delete(g.memmgr);
+    }
 
     // Close log file
     if (g.log_file)
@@ -86,10 +94,11 @@ static void handle_sigchld(int sig)
     // Decrement number of child processes
     g.num_child_procs--;
 
-    // printf(3) is not signal-safe
-    // POSIX allows the use of write(2), but this is unformatted
+    // printf(3) is not signal-safe, but POSIX allows write(2)
+    // Using sizeof on a char array initialized via string literal includes the null terminator
+    // Printing the null terminator is undesired, so subtract 1 from the size
     char death_notice_msg[] = "oss: received a child process death notice\n";
-    write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg));
+    write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg) - 1);
 
     // Get and record the pid
     // Hopefully we can report it in time
@@ -226,6 +235,9 @@ int main(int argc, char* argv[])
     // Create and start outgoing clock
     g.clock = clock_new(CLOCK_MODE_OUT);
 
+    // Create kernel memory manager
+    g.memmgr = memmgr_new(MEMMGR_MODE_KERNEL);
+
     fprintf(stderr, "press ^C to stop the simulation\n");
 
     unsigned long next_spawn_time = 0;
@@ -261,6 +273,7 @@ int main(int argc, char* argv[])
         //
 
         // Report child process deaths
+        // In practice, everything is so fast that this reports all deaths
         if (g.last_child_proc_dead)
         {
             printf("oss: process %d has died\n", g.last_child_proc_dead);
@@ -268,11 +281,11 @@ int main(int argc, char* argv[])
         }
 
         // If we should try to spawn a child process
-        // We do so on first iteration or on subsequent iterations spaced out by 1 to 500 milliseconds
+        // We do so on first iteration or on subsequent iterations after small delays
         if (now_time >= next_spawn_time)
         {
             // If there is room for another process
-            if (g.num_child_procs < MAX_PROCESSES)
+            if (g.num_child_procs < MAX_USER_PROCS)
             {
                 if (g.interrupted)
                     return 0;
@@ -289,10 +302,31 @@ int main(int argc, char* argv[])
             next_spawn_time = now_time + (rand() % 500) * 1000000ul;
         }
 
+        // Block SIGCHLD to prevent lock interference
+        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+
+        if (memmgr_lock(g.memmgr))
+            return 1;
+
+        // Unblock SIGCHLD
+        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
+
+        // TODO: Do memory management somehow
+
+        // Block SIGCHLD to prevent lock interference
+        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+
+        if (memmgr_unlock(g.memmgr))
+            return 1;
+
+        // Unblock SIGCHLD
+        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
+
         // Break loop on interrupt
         if (g.interrupted)
             break;
 
+        // Add some real time to the simulation
         usleep(100000);
     }
 

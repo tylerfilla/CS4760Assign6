@@ -5,7 +5,8 @@ Assignment 6
 Preamble
 ========
 
-[ preamble ]
+Since the simulated processes don't have a page table register (research), I map the processes' pids to page tables in
+a shared memory array.
 
 Directory Structure
 ===================

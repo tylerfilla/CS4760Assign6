@@ -10,7 +10,9 @@
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
+#include <unistd.h>
 
+#include "config.h"
 #include "memmgr.h"
 
 #define SEM_FTOK_CHAR 'M'
@@ -20,13 +22,19 @@
  * The size, in bytes, of each memory page.
  * Assigned: 1 KiB
  */
-#define PAGE_SIZE 1024
+#define PAGE_SIZE (1 * 1024)
 
 /**
  * The size, in bytes, of the simulated system memory.
  * Assigned: 256 KiB
  */
 #define SYSTEM_MEMORY_SIZE (256 * 1024)
+
+/**
+ * The size, in bytes, of each process's virtual memory address spaces.
+ * Assigned: 32 KiB
+ */
+#define USER_PROCESS_VM_SIZE (32 * 1024)
 
 /**
  * Page frame allocated bit mask. Indicates that a frame is allocated a page in memory.
@@ -44,52 +52,84 @@
 #define PAGE_FRAME_BIT_REFERENCE 4
 
 /**
- * Page request result bit mask. Indicates the request succeeded and the requested page allocated.
- */
-#define PAGE_REQUEST_SUCCESS 1
-
-/**
- * Page request result bit mask. Indicates a page fault occurred.
- */
-#define PAGE_REQUEST_FAULT 2
-
-/**
  * A page frame. Pages themselves are simulated as blocks of heap memory.
  */
-typedef struct __page_frame
+typedef struct
 {
     /** A bitfield of flags governing operation. */
     unsigned int bits;
 
     /** The time at which the page was paged in. */
     unsigned long time_page_in;
-};
+} __page_frame;
 
 /**
  * A page table.
  */
-typedef struct __page_table
+typedef struct
 {
-};
-
-/**
- * Request a specific page to be allocated.
- *
- * @param page The page ??? (FIXME)
- * @return A bitfield of result information
- */
-static unsigned int __page_request(int page)
-{
-}
+    /** The page frames. */
+    __page_frame frames[9001];
+} __page_table;
 
 /**
  * Internal memory for memory manager. Shared.
  */
 struct __memmgr_mem_s
 {
-    /** The number of free page frames. */
-    int free_frames;
+    /** The page tables. */
+    __page_table page_tables[MAX_USER_PROCS];
+
+    /** In lieu of a page table base register, this maps between real system pids and page table indices. */
+    pid_t page_table_map[MAX_USER_PROCS];
+
+    /** The number of processes mapped to page tables. */
+    int num_procs_mapped;
 };
+
+static int memmgr_look_up_proc(memmgr_s* self, pid_t proc)
+{
+    int idx;
+    for (idx = 0; idx < MAX_USER_PROCS; ++idx)
+    {
+        if (self->__mem->page_table_map[idx] == proc)
+            return idx;
+    }
+
+    return -1;
+}
+
+static int memmgr_map_proc(memmgr_s* self, pid_t proc)
+{
+    if (self->__mem->num_procs_mapped == MAX_USER_PROCS)
+        return 1;
+
+    // Find first available page table
+    int idx;
+    for (idx = 0; idx < MAX_USER_PROCS; ++idx)
+    {
+        if (self->__mem->page_table_map[idx] == -1)
+            break;
+    }
+
+    // Map the process
+    self->__mem->page_table_map[idx] = proc;
+    self->__mem->num_procs_mapped++;
+
+    return 0;
+}
+
+static int memmgr_unmap_proc(memmgr_s* self, pid_t proc)
+{
+    // Look up the page table index for the process
+    int idx = memmgr_look_up_proc(self, proc);
+
+    // Unmap the process
+    self->__mem->page_table_map[idx] = -1;
+    self->__mem->num_procs_mapped--;
+
+    return 0;
+}
 
 /**
  * Start the memory manager user agent.
@@ -156,10 +196,18 @@ static int memmgr_start_ua(memmgr_s* self)
     self->semid = semid;
     self->__mem = shm;
 
+    // Map the client process
+    if (memmgr_map_proc(self, getpid()))
+    {
+        fprintf(stderr, "error: start memory manager user agent: unable to map client process %d\n", getpid());
+        goto fail_map;
+    }
+
     return 0;
 
 fail_sem:
 fail_shm:
+fail_map:
     // Detach shared memory, if needed
     if (shm != NULL)
     {
@@ -249,6 +297,12 @@ static int memmgr_start_kernel(memmgr_s* self)
     self->semid = semid;
     self->__mem = shm;
 
+    // Initialize page table map
+    for (int i = 0; i < MAX_USER_PROCS; ++i)
+    {
+        self->__mem->page_table_map[i] = -1;
+    }
+
     return 0;
 
 fail_sem:
@@ -294,6 +348,13 @@ static int memmgr_stop_ua(memmgr_s* self)
     if (!self->running)
         return 1;
 
+    // Unmap the client process
+    if (memmgr_unmap_proc(self, getpid()))
+    {
+        fprintf(stderr, "error: stop memory manager user agent: unable to unmap client process %d\n", getpid());
+        goto fail_unmap;
+    }
+
     errno = 0;
 
     // Detach shared memory segment
@@ -312,6 +373,7 @@ static int memmgr_stop_ua(memmgr_s* self)
     return 0;
 
 fail_shm:
+fail_unmap:
     return 1;
 }
 
