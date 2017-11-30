@@ -7,20 +7,14 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
 #include <unistd.h>
 
 #include "clock.h"
 
-#define PARAM_B 3000
-
 static struct
 {
-    /** Nonzero if in verbose mode, otherwise zero. */
-    int verbose;
-
     /** The incoming clock instance. */
     clock_s* clock;
 
@@ -47,18 +41,6 @@ int main(int argc, char* argv[])
 {
     atexit(&handle_exit);
     srand((unsigned int) time(NULL) ^ getpid());
-
-    // Handle rudimentary command-line arguments
-    for (int argi = 0; argi < argc; ++argi)
-    {
-        char* arg = argv[argi];
-
-        // Verbosity control argument
-        if (strcmp(arg, "-v") == 0)
-        {
-            g.verbose = 1;
-        }
-    }
 
     // Handle SIGINT
     struct sigaction sigaction_sigint = {};
@@ -93,10 +75,7 @@ int main(int argc, char* argv[])
             // FIXME: Was this specified anywhere in the assignment?
             if (rand() % 20 == 0)
             {
-                if (g.verbose)
-                {
-                    printf("%d: dying of natural causes\n", getpid());
-                }
+                printf("%d: dying of natural causes\n", getpid());
                 return 0;
             }
 

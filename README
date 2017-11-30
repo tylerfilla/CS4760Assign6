@@ -22,6 +22,10 @@ Project Root
  |
  +-- oss.c          (the main file for the oss program)
  |
+ +-- memmgr.c       (the main file for the memory manager library)
+ |
+ +-- memmgr.h       (the corresponding header file for memmgr.c)
+ |
  +-- README
 
 Building

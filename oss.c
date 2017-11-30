@@ -23,9 +23,6 @@ static struct
     /** The desired path to the log file. */
     char* log_file_path;
 
-    /** Nonzero if in verbose mode, otherwise zero. */
-    volatile sig_atomic_t verbose;
-
     /** The open log file. */
     FILE* log_file;
 
@@ -89,13 +86,10 @@ static void handle_sigchld(int sig)
     // Decrement number of child processes
     g.num_child_procs--;
 
-    if (g.verbose)
-    {
-        // printf(3) is not signal-safe
-        // POSIX allows the use of write(2), but this is unformatted
-        char death_notice_msg[] = "oss: received a child process death notice\n";
-        write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg));
-    }
+    // printf(3) is not signal-safe
+    // POSIX allows the use of write(2), but this is unformatted
+    char death_notice_msg[] = "oss: received a child process death notice\n";
+    write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg));
 
     // Get and record the pid
     // Hopefully we can report it in time
@@ -111,7 +105,7 @@ static void handle_sigint(int sig)
 
 static pid_t launch_child()
 {
-    int child_pid = fork();
+    pid_t child_pid = fork();
     if (child_pid == 0)
     {
         // Fork succeeded, now in child
@@ -121,8 +115,7 @@ static pid_t launch_child()
         dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
-        // Pass along verbosity control argument, if applicable
-        if (execv("./child", (char* []) { "./child", g.verbose ? "-v" : NULL, NULL }))
+        if (execv("./child", (char* []) { "./child", NULL }))
         {
             perror("launch child failed (in child): execv(2) failed");
         }
@@ -151,7 +144,6 @@ static void print_help(FILE* dest, const char* executable_name)
     fprintf(dest, "Supported options:\n");
     fprintf(dest, "    -h          Display this information\n");
     fprintf(dest, "    -l <file>   Log events to <file> (default oss.log)\n");
-    fprintf(dest, "    -v          Verbose mode\n");
 }
 
 static void print_usage(FILE* dest, const char* executable_name)
@@ -169,7 +161,7 @@ int main(int argc, char* argv[])
 
     // Handle command-line options
     int opt;
-    while ((opt = getopt(argc, argv, "hl:v")) != -1)
+    while ((opt = getopt(argc, argv, "hl:")) != -1)
     {
         switch (opt)
         {
@@ -184,9 +176,6 @@ int main(int argc, char* argv[])
                 perror("global.log_file_path not allocated: strdup(3) failed");
                 return 1;
             }
-            break;
-        case 'v':
-            g.verbose = 1;
             break;
         default:
             fprintf(stderr, "invalid option: -%c\n", opt);
@@ -247,7 +236,7 @@ int main(int argc, char* argv[])
         // Simulate Clock
         //
 
-        // Block SIGCHLD
+        // Block SIGCHLD to prevent lock interference
         sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
 
         if (clock_lock(g.clock))
@@ -274,11 +263,7 @@ int main(int argc, char* argv[])
         // Report child process deaths
         if (g.last_child_proc_dead)
         {
-            if (g.verbose)
-            {
-                printf("oss: process %d has died\n", g.last_child_proc_dead);
-            }
-
+            printf("oss: process %d has died\n", g.last_child_proc_dead);
             g.last_child_proc_dead = 0;
         }
 
@@ -295,14 +280,12 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
-                if (g.verbose)
-                {
-                    printf("oss: spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
-                    printf("oss: there are now %d processes in the system\n", g.num_child_procs);
-                }
+                printf("oss: spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
+                printf("oss: there are now %d processes in the system\n", g.num_child_procs);
             }
 
             // Schedule next spawn time
+            // Select a random time between now and 500 milliseconds from now
             next_spawn_time = now_time + (rand() % 500) * 1000000ul;
         }
 

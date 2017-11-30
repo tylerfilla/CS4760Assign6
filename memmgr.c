@@ -17,12 +17,30 @@
 #define SHM_FTOK_CHAR 'N'
 
 /**
+ * Page frame dirty bit mask.
+ */
+#define PAGE_FRAME_BIT_DIRTY
+
+/**
+ * Page from reference bit mask.
+ */
+#define PAGE_FRAME_BIT_REFERENCE
+
+/**
+ * A page frame. This describes a page of memory, but no corresponding pages of memory are actually simulated at any
+ * point in this project.
+ */
+typedef struct __page_frame
+{
+};
+
+/**
  * Internal memory for memory manager. Shared.
  */
 struct __memmgr_mem_s
 {
-    // TODO: Add stuff
-    int struct_not_empty;
+    /** The number of free page frames. */
+    int free_frames;
 };
 
 /**
