@@ -66,6 +66,10 @@ int main(int argc, char* argv[])
 
     while (1)
     {
+        //
+        // Get Clock Time
+        //
+
         if (clock_lock(g.clock))
             return 1;
 
@@ -77,7 +81,36 @@ int main(int argc, char* argv[])
         if (clock_unlock(g.clock))
             return 1;
 
-        // TODO: Do client stuff somehow
+        //
+        // User Process Duties
+        //
+
+        if (memmgr_lock(g.memmgr))
+            return 1;
+
+        // Choose a random virtual memory address to reference
+        ptr_vm_t ptr = rand() % memmgr_get_vm_high_ptr(g.memmgr);
+
+        // Take a 50/50 chance to read or write to this address
+        switch (rand() % 2)
+        {
+        case 0:
+            printf("child %d: reading from virtual memory address %#06lx\n", getpid(), ptr);
+            memmgr_read_ptr(g.memmgr, ptr);
+            break;
+        case 1:
+            printf("child %d: writing to   virtual memory address %#06lx\n", getpid(), ptr);
+            memmgr_write_ptr(g.memmgr, ptr);
+            break;
+        }
+
+        fflush(stdout);
+
+        if (memmgr_unlock(g.memmgr))
+            return 1;
+
+        // FIXME
+        usleep(100000);
 
         // Break loop on interrupt
         if (g.interrupted)

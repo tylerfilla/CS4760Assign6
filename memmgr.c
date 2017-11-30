@@ -521,12 +521,17 @@ int memmgr_unlock(memmgr_s* self)
     return 0;
 }
 
+ptr_vm_t memmgr_get_vm_high_ptr(memmgr_s* memmgr)
+{
+    return USER_PROCESS_VM_SIZE - 1;
+}
+
 int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
 {
     // Get user process pid
     pid_t proc = getpid();
 
-    // Get page table
+    // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
     // TODO: Do read
@@ -539,7 +544,7 @@ int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
     // Get user process pid
     pid_t proc = getpid();
 
-    // Get page table
+    // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
     // TODO: Do write

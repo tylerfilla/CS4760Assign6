@@ -272,6 +272,15 @@ int main(int argc, char* argv[])
         // Simulate OS Duties
         //
 
+        // Block SIGCHLD to prevent lock interference
+        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+
+        if (memmgr_lock(g.memmgr))
+            return 1;
+
+        // Unblock SIGCHLD
+        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
+
         // Report child process deaths
         // In practice, everything is so fast that this reports all deaths
         if (g.last_child_proc_dead)
@@ -302,16 +311,9 @@ int main(int argc, char* argv[])
             next_spawn_time = now_time + (rand() % 500) * 1000000ul;
         }
 
-        // Block SIGCHLD to prevent lock interference
-        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
-
-        if (memmgr_lock(g.memmgr))
-            return 1;
-
-        // Unblock SIGCHLD
-        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
-
         // TODO: Do memory management somehow
+
+        fflush(stdout);
 
         // Block SIGCHLD to prevent lock interference
         sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);

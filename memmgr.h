@@ -101,9 +101,19 @@ int memmgr_lock(memmgr_s* memmgr);
 int memmgr_unlock(memmgr_s* memmgr);
 
 /**
+ * Get the highest pointer of the VM address space of the calling user process.
+ *
+ * User mode.
+ *
+ * @param memmgr The memory manager instance
+ * @return The topmost pointer in the VM address space
+ */
+ptr_vm_t memmgr_get_vm_high_ptr(memmgr_s* memmgr);
+
+/**
  * Simulate a read at the given virtual memory address.
  *
- * User mode. TODO: Provide suspend feedback
+ * User mode. TODO: Provide suspend feedback for page faults
  *
  * @param memmgr The memory manager instance
  * @param ptr The virtual memory pointer
@@ -114,7 +124,7 @@ int memmgr_read_ptr(memmgr_s* memmgr, ptr_vm_t ptr);
 /**
  * Simulate a write at the given virtual memory address. The written value is not simulated.
  *
- * User mode. TODO: Provide suspend feedback
+ * User mode. TODO: Provide suspend feedback for page faults
  *
  * @param memmgr The memory manager instance
  * @param ptr The virtual memory pointer
