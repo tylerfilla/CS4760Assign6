@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
         // Get latest time from clock
         unsigned int now_nanos = clock_get_nanos(g.clock);
         unsigned int now_seconds = clock_get_seconds(g.clock);
-        unsigned long now_time = now_seconds * 1000000000ul + now_nanos;
+        unsigned long now_time = clock_get_time(g.clock);
 
         if (clock_unlock(g.clock))
             return 1;

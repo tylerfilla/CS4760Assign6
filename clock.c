@@ -418,3 +418,8 @@ unsigned int clock_get_seconds(clock_s* self)
 {
     return self->__mem->seconds;
 }
+
+unsigned long clock_get_time(clock_s* self)
+{
+    return self->__mem->seconds * 1000000000ul + (unsigned long) self->__mem->nanos;
+}

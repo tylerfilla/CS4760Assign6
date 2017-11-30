@@ -115,4 +115,12 @@ unsigned int clock_get_nanos(clock_s* clock);
  */
 unsigned int clock_get_seconds(clock_s* clock);
 
+/**
+ * Retrieve and calculate the number of nanoseconds elapsed since a clock started.
+ *
+ * @param clock The clock instance
+ * @return Its total elapsed time in nanoseconds
+ */
+unsigned long clock_get_time(clock_s* clock);
+
 #endif // #ifndef CLOCK_H
