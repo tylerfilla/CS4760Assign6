@@ -17,22 +17,70 @@
 #define SHM_FTOK_CHAR 'N'
 
 /**
- * Page frame dirty bit mask.
+ * The size, in bytes, of each memory page.
+ * Assigned: 1 KiB
  */
-#define PAGE_FRAME_BIT_DIRTY
+#define PAGE_SIZE 1024
 
 /**
- * Page from reference bit mask.
+ * The size, in bytes, of the simulated system memory.
+ * Assigned: 256 KiB
  */
-#define PAGE_FRAME_BIT_REFERENCE
+#define SYSTEM_MEMORY_SIZE (256 * 1024)
 
 /**
- * A page frame. This describes a page of memory, but no corresponding pages of memory are actually simulated at any
- * point in this project.
+ * Page frame allocated bit mask. Indicates that a frame is allocated a page in memory.
+ */
+#define PAGE_FRAME_BIT_ALLOCATED 1
+
+/**
+ * Page frame dirty bit mask. Indicates that a page was modified since page-in.
+ */
+#define PAGE_FRAME_BIT_DIRTY 2
+
+/**
+ * Page from reference bit mask. Indicates that a page was modified recently.
+ */
+#define PAGE_FRAME_BIT_REFERENCE 4
+
+/**
+ * Page request result bit mask. Indicates the request succeeded and the requested page allocated.
+ */
+#define PAGE_REQUEST_SUCCESS 1
+
+/**
+ * Page request result bit mask. Indicates a page fault occurred.
+ */
+#define PAGE_REQUEST_FAULT 2
+
+/**
+ * A page frame. Pages themselves are simulated as blocks of heap memory.
  */
 typedef struct __page_frame
 {
+    /** A bitfield of flags governing operation. */
+    unsigned int bits;
+
+    /** The time at which the page was paged in. */
+    unsigned long time_page_in;
 };
+
+/**
+ * A page table.
+ */
+typedef struct __page_table
+{
+};
+
+/**
+ * Request a specific page to be allocated.
+ *
+ * @param page The page ??? (FIXME)
+ * @return A bitfield of result information
+ */
+static unsigned int __page_request(int page)
+{
+}
 
 /**
  * Internal memory for memory manager. Shared.
