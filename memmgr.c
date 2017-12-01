@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <sys/ipc.h>
 #include <sys/sem.h>
@@ -37,19 +38,20 @@
 #define USER_PROCESS_VM_SIZE (32 * 1024)
 
 /**
- * Page frame allocated bit mask. Indicates that a frame is allocated a page in memory.
+ * A macro to translate a virtual memory address to a VM page number. If you modify any of the above parameters, this
+ * macro will need to be adjusted.
  */
-#define PAGE_FRAME_BIT_ALLOCATED 1
+#define TRANSLATE_PAGE(ptr) ((0x7c00ul & (ptr)) >> 10)
 
 /**
  * Page frame dirty bit mask. Indicates that a page was modified since page-in.
  */
-#define PAGE_FRAME_BIT_DIRTY 2
+#define PAGE_FRAME_BIT_DIRTY (1ul << 0)
 
 /**
  * Page from reference bit mask. Indicates that a page was modified recently.
  */
-#define PAGE_FRAME_BIT_REFERENCE 4
+#define PAGE_FRAME_BIT_REFERENCE (1ul << 1)
 
 /**
  * A page frame. Pages themselves are simulated as blocks of heap memory.
@@ -64,12 +66,12 @@ typedef struct
 } __page_frame;
 
 /**
- * A page table.
+ * A process page table.
  */
 typedef struct
 {
     /** The page frames. */
-    __page_frame frames[USER_PROCESS_VM_SIZE / PAGE_SIZE];
+    __page_frame* frames[USER_PROCESS_VM_SIZE / PAGE_SIZE];
 } __page_table;
 
 /**
@@ -77,7 +79,10 @@ typedef struct
  */
 struct __memmgr_mem_s
 {
-    /** The page tables. */
+    /** The system memory page frames. */
+    __page_frame system_frames[SYSTEM_MEMORY_SIZE / PAGE_SIZE];
+
+    /** The process page tables. */
     __page_table page_tables[MAX_USER_PROCS];
 
     /** In lieu of a page table base register, this maps between real system pids and page table indices. */
@@ -304,16 +309,24 @@ static int memmgr_start_kernel(memmgr_s* self)
         goto fail_sem;
     }
 
+    //
+    // Initialization
+    //
+
     self->running = MEMMGR_RUNNING;
     self->shmid = shmid;
     self->semid = semid;
     self->__mem = shm;
 
-    // Initialize page table map
+    memset(self->__mem->system_frames, 0, sizeof(self->__mem->system_frames));
+    memset(self->__mem->page_tables, 0, sizeof(self->__mem->page_tables));
+
     for (int i = 0; i < MAX_USER_PROCS; ++i)
     {
         self->__mem->page_table_map[i] = -1;
     }
+
+    self->__mem->num_procs_mapped = 0;
 
     return 0;
 
@@ -534,7 +547,22 @@ int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
-    // TODO: Do read
+    // Get page frame for VM pointer
+    __page_frame* page_frame = page_table->frames[TRANSLATE_PAGE(ptr)];
+
+    // If page frame is not allocated, we have a page fault
+    if (page_frame == NULL)
+    {
+        // Put process in I/O queue for page
+        // We will return to this function when it is allocated
+        // TODO: Put process in queue
+
+        // Report page fault to process can suspend
+        return 2;
+    }
+
+    // Set reference bit
+    page_frame->bits |= PAGE_FRAME_BIT_REFERENCE;
 
     return 0;
 }
@@ -547,7 +575,30 @@ int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
-    // TODO: Do write
+    // Get page frame for VM pointer
+    __page_frame* page_frame = page_table->frames[TRANSLATE_PAGE(ptr)];
 
+    // If page frame is not allocated, we have a page fault
+    if (page_frame == NULL)
+    {
+        // Put process in I/O queue for page
+        // We will return to this function when it is allocated
+        // TODO: Put process in queue
+
+        // Report page fault to process can suspend
+        return 2;
+    }
+
+    // Set reference bit
+    page_frame->bits |= PAGE_FRAME_BIT_REFERENCE;
+
+    // Set dirty bit
+    page_frame->bits |= PAGE_FRAME_BIT_DIRTY;
+
+    return 0;
+}
+
+int memmgr_is_resident(memmgr_s* self, ptr_vm_t ptr)
+{
     return 0;
 }

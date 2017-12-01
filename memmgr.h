@@ -53,11 +53,6 @@ typedef struct
 typedef unsigned long ptr_vm_t;
 
 /**
- * A simulated physical memory pointer.
- */
-typedef unsigned long ptr_phy_t;
-
-/**
  * Create a memory manager instance.
  */
 #define memmgr_new(mode) memmgr_construct(malloc(sizeof(memmgr_s)), (mode))
@@ -113,23 +108,34 @@ ptr_vm_t memmgr_get_vm_high_ptr(memmgr_s* memmgr);
 /**
  * Simulate a read at the given virtual memory address.
  *
- * User mode. TODO: Provide suspend feedback for page faults
+ * User mode.
  *
  * @param memmgr The memory manager instance
  * @param ptr The virtual memory pointer
- * @return Zero on success, otherwise nonzero
+ * @return Zero on success, two on page fault, or otherwise nonzero
  */
 int memmgr_read_ptr(memmgr_s* memmgr, ptr_vm_t ptr);
 
 /**
  * Simulate a write at the given virtual memory address. The written value is not simulated.
  *
- * User mode. TODO: Provide suspend feedback for page faults
+ * User mode.
  *
  * @param memmgr The memory manager instance
  * @param ptr The virtual memory pointer
- * @return Zero on success, otherwise nonzero
+ * @return Zero on success, two on page fault, or otherwise nonzero
  */
 int memmgr_write_ptr(memmgr_s* memmgr, ptr_vm_t ptr);
+
+/**
+ * Check if the given pointer is resident in the calling process's virtual memory.
+ *
+ * User mode.
+ *
+ * @param memmgr The memory manager instance
+ * @param ptr The virtual memory pointer
+ * @return Nonzero if such is the case, otherwise zero
+ */
+int memmgr_is_resident(memmgr_s* memmgr, ptr_vm_t ptr);
 
 #endif // #ifndef MEMMGR_H

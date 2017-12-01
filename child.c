@@ -104,22 +104,47 @@ int main(int argc, char* argv[])
         ptr_vm_t ptr = rand() % memmgr_get_vm_high_ptr(g.memmgr);
 
         // Take a 50/50 chance to read or write to this address
+        int ref_res = -1;
         switch (rand() % 2)
         {
         case 0:
             logger_log(g.logger, "child %d: reading from virtual memory address %#06lx", getpid(), ptr);
-            memmgr_read_ptr(g.memmgr, ptr);
+            ref_res = memmgr_read_ptr(g.memmgr, ptr);
             break;
         case 1:
             logger_log(g.logger, "child %d: writing to   virtual memory address %#06lx", getpid(), ptr);
-            memmgr_write_ptr(g.memmgr, ptr);
+            ref_res = memmgr_write_ptr(g.memmgr, ptr);
             break;
         }
 
         if (memmgr_unlock(g.memmgr))
             return 1;
 
-        // FIXME
+        if (ref_res == 2)
+        {
+            logger_log(g.logger, "child %d: page fault on reference to nonresident VM address %#06lx", getpid(), ptr);
+            logger_log(g.logger, "child %d: suspending until memory is resident", getpid());
+
+            // Suspend the process until the address is available
+            while (1)
+            {
+                if (memmgr_lock(g.memmgr))
+                    return 1;
+
+                // If address finally became available, break suspension
+                // The memory manager will have re-executed the read/write at this point
+                if (memmgr_is_resident(g.memmgr, ptr))
+                    break;
+
+                if (memmgr_unlock(g.memmgr))
+                    return 1;
+
+                // Sleep for real
+                usleep(100000);
+            }
+        }
+
+        // FIXME: Remove this
         usleep(100000);
 
         // Break loop on interrupt
