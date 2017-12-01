@@ -212,10 +212,6 @@ int main(int argc, char* argv[])
         perror("unable to open log file, so logging will not occur");
     }
 
-    // Redirect stdout to the log file
-    // We will communicate on the terminal using stderr
-    dup2(fileno(g.log_file), STDOUT_FILENO);
-
     // Register handler for SIGCHLD signal (to know when children die)
     struct sigaction sigaction_sigchld = {};
     sigaction_sigchld.sa_handler = &handle_sigchld;
@@ -245,7 +241,7 @@ int main(int argc, char* argv[])
     g.clock = clock_new(CLOCK_MODE_OUT);
 
     // Create kernel memory manager
-    g.memmgr = memmgr_new(MEMMGR_MODE_KERNEL);
+    g.memmgr = memmgr_new(MEMMGR_MODE_KERNEL, g.clock);
 
     fprintf(stderr, "press ^C to stop the simulation\n");
 
@@ -264,7 +260,7 @@ int main(int argc, char* argv[])
             return 1;
 
         // Advance the clock by 0 to 250 milliseconds
-        clock_advance(g.clock, rand() % 250000000u, 0);
+        clock_advance(g.clock, 0, rand() % 250000000u);
 
         // Get latest time from clock
         unsigned int now_nanos = clock_get_nanos(g.clock);
@@ -280,15 +276,6 @@ int main(int argc, char* argv[])
         //
         // Simulate OS Duties
         //
-
-        // Block SIGCHLD to prevent lock interference
-        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
-
-        if (memmgr_lock(g.memmgr))
-            return 1;
-
-        // Unblock SIGCHLD
-        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
 
         // Report child process deaths
         // In practice, everything is so fast that this reports all deaths
@@ -320,10 +307,16 @@ int main(int argc, char* argv[])
             next_spawn_time = now_time + (rand() % 500) * 1000000ul;
         }
 
-        // TODO: Do memory management somehow
-
         // Block SIGCHLD to prevent lock interference
         sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+
+        if (memmgr_lock(g.memmgr))
+            return 1;
+
+        // Update the state of the memory manager
+        // This may internally involve locking/unlocking the clock semaphore, so leave SIGCHLD blocked
+        if (memmgr_update(g.memmgr))
+            return 1;
 
         if (memmgr_unlock(g.memmgr))
             return 1;
@@ -331,14 +324,8 @@ int main(int argc, char* argv[])
         if (logger_lock(g.logger))
             return 1;
 
-        // Unblock SIGCHLD
-        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
-
-        // Dump log records to STDOUT
-        logger_dump(g.logger, stdout);
-
-        // Block SIGCHLD to prevent lock interference
-        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+        // Dump accumulated log records to the log file
+        logger_dump(g.logger, g.log_file);
 
         if (logger_unlock(g.logger))
             return 1;

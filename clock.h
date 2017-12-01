@@ -75,15 +75,6 @@ clock_s* clock_construct(clock_s* clock, int mode);
 clock_s* clock_destruct(clock_s* clock);
 
 /**
- * Advance a clock instance by the given time difference.
- *
- * @param clock The clock instance
- * @param dn Additional nanoseconds
- * @param ds Additional seconds
- */
-void clock_advance(clock_s* clock, unsigned int dn, unsigned int ds);
-
-/**
  * Lock a clock for exclusive access. This blocks if already locked.
  *
  * @param clock The clock instance
@@ -98,6 +89,15 @@ int clock_lock(clock_s* clock);
  * @return Zero on success, otherwise nonzero
  */
 int clock_unlock(clock_s* clock);
+
+/**
+ * Advance a clock instance by the given time difference.
+ *
+ * @param clock The clock instance
+ * @param ds Additional seconds
+ * @param dn Additional nanoseconds
+ */
+void clock_advance(clock_s* clock, unsigned int ds, unsigned int dn);
 
 /**
  * Retrieve the current number of nanoseconds elapsed since the last second since a clock started.

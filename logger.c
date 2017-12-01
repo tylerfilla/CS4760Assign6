@@ -72,7 +72,7 @@ static int logger_start_client(logger_s* self)
         goto fail_shm;
     }
 
-    // Attach shared memory segment as read-only
+    // Attach shared memory segment
     shm = shmat(shmid, NULL, 0);
     if (errno)
     {

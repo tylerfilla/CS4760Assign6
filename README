@@ -14,6 +14,14 @@ User mode reads and writes are coarsely simulated. There is no data read/written
 Since no scheduling is simulated, oss really has no control over the children, so suspension is simulated in the
 children when memmgr informs them of page faults.
 
+There is no queue structure for the mythical memory backing store device. Instead, since each process can only wait on
+one page at a time, a single array with MAX_USER_PROCS of wait buffers is used. Each wait buffer identifies the waiting
+process and the time at which its simulated wait is lifted. oss lifts the waits every now and then based on the clock.
+
+Due to the corners cut for the simulation, I found it most efficient to let child processes advance the clock by 10ns
+themselves when they read/write. The reads/writes are already simulated partially in oss and partially in child, so this
+is not too much of a problem in my book.
+
 Directory Structure
 ===================
 

@@ -60,8 +60,8 @@ static int clock_start_in(clock_s* self)
         goto fail_shm;
     }
 
-    // Attach shared memory segment as read-only
-    shm = shmat(shmid, NULL, SHM_RDONLY);
+    // Attach shared memory segment
+    shm = shmat(shmid, NULL, 0);
     if (errno)
     {
         perror("start incoming clock: unable to attach shm: shmat(2) failed");
@@ -352,28 +352,6 @@ clock_s* clock_destruct(clock_s* self)
     return self;
 }
 
-void clock_advance(clock_s* self, unsigned int dn, unsigned int ds)
-{
-    // Current time
-    unsigned int nanos = self->__mem->nanos;
-    unsigned int seconds = self->__mem->seconds;
-
-    // Advance time
-    nanos += dn;
-    seconds += ds;
-
-    // Wrap nanoseconds
-    if (nanos >= 1000000000)
-    {
-        seconds += nanos / 1000000000;
-        nanos %= 1000000000;
-    }
-
-    // Update time
-    self->__mem->nanos = nanos;
-    self->__mem->seconds = seconds;
-}
-
 int clock_lock(clock_s* self)
 {
     errno = 0;
@@ -404,6 +382,28 @@ int clock_unlock(clock_s* self)
     }
 
     return 0;
+}
+
+void clock_advance(clock_s* self, unsigned int ds, unsigned int dn)
+{
+    // Current time
+    unsigned int nanos = self->__mem->nanos;
+    unsigned int seconds = self->__mem->seconds;
+
+    // Advance time
+    nanos += dn;
+    seconds += ds;
+
+    // Wrap nanoseconds
+    if (nanos >= 1000000000)
+    {
+        seconds += nanos / 1000000000;
+        nanos %= 1000000000;
+    }
+
+    // Update time
+    self->__mem->nanos = nanos;
+    self->__mem->seconds = seconds;
 }
 
 unsigned int clock_get_nanos(clock_s* self)

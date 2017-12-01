@@ -7,6 +7,8 @@
 #ifndef MEMMGR_H
 #define MEMMGR_H
 
+#include "clock.h"
+
 /**
  * Mode indicating a memory manager is operating as a user agent.
  */
@@ -34,6 +36,9 @@ typedef struct
     /** Memory manager mode. */
     int mode;
 
+    /** The clock instance. */
+    clock_s* clock;
+
     /** Whether the memory manager is currently running. */
     int running;
 
@@ -55,7 +60,7 @@ typedef unsigned long ptr_vm_t;
 /**
  * Create a memory manager instance.
  */
-#define memmgr_new(mode) memmgr_construct(malloc(sizeof(memmgr_s)), (mode))
+#define memmgr_new(mode, clock) memmgr_construct(malloc(sizeof(memmgr_s)), (mode), (clock))
 
 /**
  * Destroy a memory manager instance.
@@ -67,9 +72,10 @@ typedef unsigned long ptr_vm_t;
  *
  * @param memmgr The memory manager instance
  * @param mode The memory manager mode
+ * @param clock The clock instance
  * @return The memory manager instance, constructed
  */
-memmgr_s* memmgr_construct(memmgr_s* memmgr, int mode);
+memmgr_s* memmgr_construct(memmgr_s* memmgr, int mode, clock_s* clock);
 
 /**
  * Destruct a memory manager instance.
@@ -128,14 +134,24 @@ int memmgr_read_ptr(memmgr_s* memmgr, ptr_vm_t ptr);
 int memmgr_write_ptr(memmgr_s* memmgr, ptr_vm_t ptr);
 
 /**
- * Check if the given pointer is resident in the calling process's virtual memory.
+ * Check if the calling process is waiting for I/O to complete.
  *
  * User mode.
  *
  * @param memmgr The memory manager instance
- * @param ptr The virtual memory pointer
  * @return Nonzero if such is the case, otherwise zero
  */
-int memmgr_is_resident(memmgr_s* memmgr, ptr_vm_t ptr);
+int memmgr_is_waiting(memmgr_s* memmgr);
+
+/**
+ * Update the state of a memory manager instance to keep everything consistent. This may involve administrative actions
+ * such as satisfying I/O requests and calculating statistics.
+ *
+ * Kernel mode.
+ *
+ * @param memmgr The memory manager instance
+ * @return Zero on success, otherwise nonzero
+ */
+int memmgr_update(memmgr_s* memmgr);
 
 #endif // #ifndef MEMMGR_H

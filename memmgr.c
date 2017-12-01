@@ -13,6 +13,7 @@
 #include <sys/shm.h>
 #include <unistd.h>
 
+#include "clock.h"
 #include "config.h"
 #include "memmgr.h"
 
@@ -44,14 +45,19 @@
 #define TRANSLATE_PAGE(ptr) ((0x7c00ul & (ptr)) >> 10)
 
 /**
- * Page frame dirty bit mask. Indicates that a page was modified since page-in.
+ * Page frame dirty bit. Indicates that a page was modified since last page-in.
  */
 #define PAGE_FRAME_BIT_DIRTY (1ul << 0)
 
 /**
- * Page from reference bit mask. Indicates that a page was modified recently.
+ * Page frame reference bit. Indicates that a page was recently referenced (read/written).
  */
 #define PAGE_FRAME_BIT_REFERENCE (1ul << 1)
+
+/**
+ * A page number.
+ */
+typedef unsigned long page_t;
 
 /**
  * A page frame. Pages themselves are simulated as blocks of heap memory.
@@ -72,6 +78,15 @@ typedef struct
 {
     /** The page frames. */
     __page_frame* frames[USER_PROCESS_VM_SIZE / PAGE_SIZE];
+
+    /** Nonzero if the process is waiting on a page. */
+    int waiting;
+
+    /** The page on which the process is currently waiting. */
+    page_t wait_page;
+
+    /** The clock time at which the simulated page wait will be lifted. */
+    unsigned long wait_done;
 } __page_table;
 
 /**
@@ -180,7 +195,7 @@ static int memmgr_start_ua(memmgr_s* self)
         goto fail_shm;
     }
 
-    // Attach shared memory segment as read-only
+    // Attach shared memory segment
     shm = shmat(shmid, NULL, 0);
     if (errno)
     {
@@ -456,12 +471,13 @@ fail_shm:
     return 1;
 }
 
-memmgr_s* memmgr_construct(memmgr_s* self, int mode)
+memmgr_s* memmgr_construct(memmgr_s* self, int mode, clock_s* clock)
 {
     if (self == NULL)
         return NULL;
 
     self->mode = mode;
+    self->clock = clock;
     self->running = MEMMGR_NOT_RUNNING;
     self->shmid = -1;
     self->semid = -1;
@@ -541,23 +557,41 @@ ptr_vm_t memmgr_get_vm_high_ptr(memmgr_s* memmgr)
 
 int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
 {
+    if (clock_lock(self->clock))
+        return 1;
+
+    // Advance by 10ns to simulate read
+    clock_advance(self->clock, 0, 10);
+
+    unsigned long read_time = clock_get_time(self->clock);
+
+    if (clock_unlock(self->clock))
+        return 1;
+
     // Get user process pid
     pid_t proc = getpid();
 
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
+    // Get page number from VM address
+    page_t page_num = TRANSLATE_PAGE(ptr);
+
     // Get page frame for VM pointer
-    __page_frame* page_frame = page_table->frames[TRANSLATE_PAGE(ptr)];
+    __page_frame* page_frame = page_table->frames[page_num];
 
     // If page frame is not allocated, we have a page fault
     if (page_frame == NULL)
     {
         // Put process in I/O queue for page
-        // We will return to this function when it is allocated
-        // TODO: Put process in queue
+        // This is simulated by storing the process's wait parameters in its page table
+        // Schedule the page to become available in 15 milliseconds (FIXME: about 15ms)
+        page_table->waiting = 1;
+        page_table->wait_page = page_num;
+        page_table->wait_done = read_time + 15000000ul;
 
-        // Report page fault to process can suspend
+        // Report page fault so process can suspend
+        // The process will need to check back at a later time for the page
         return 2;
     }
 
@@ -569,23 +603,41 @@ int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
 
 int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
 {
+    if (clock_lock(self->clock))
+        return 1;
+
+    // Advance by 10ns to simulate write
+    clock_advance(self->clock, 0, 10);
+
+    unsigned long write_time = clock_get_time(self->clock);
+
+    if (clock_unlock(self->clock))
+        return 1;
+
     // Get user process pid
     pid_t proc = getpid();
 
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
+    // Get page number from VM address
+    page_t page_num = TRANSLATE_PAGE(ptr);
+
     // Get page frame for VM pointer
-    __page_frame* page_frame = page_table->frames[TRANSLATE_PAGE(ptr)];
+    __page_frame* page_frame = page_table->frames[page_num];
 
     // If page frame is not allocated, we have a page fault
     if (page_frame == NULL)
     {
         // Put process in I/O queue for page
-        // We will return to this function when it is allocated
-        // TODO: Put process in queue
+        // This is simulated by storing the process's wait parameters in its page table
+        // Schedule the page to become available in 15 milliseconds (FIXME: about 15ms?)
+        page_table->waiting = 1;
+        page_table->wait_page = page_num;
+        page_table->wait_done = write_time + 15000000ul;
 
-        // Report page fault to process can suspend
+        // Report page fault so process can suspend
+        // The process will need to check back at a later time for the page
         return 2;
     }
 
@@ -598,7 +650,7 @@ int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
     return 0;
 }
 
-int memmgr_is_resident(memmgr_s* self, ptr_vm_t ptr)
+int memmgr_is_waiting(memmgr_s* self)
 {
     // Get user process pid
     pid_t proc = getpid();
@@ -606,6 +658,42 @@ int memmgr_is_resident(memmgr_s* self, ptr_vm_t ptr)
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
-    // Determine if page frame is allocated
-    return page_table->frames[TRANSLATE_PAGE(ptr)] != NULL;
+    return page_table->waiting;
+}
+
+int memmgr_update(memmgr_s* self)
+{
+    if (clock_lock(self->clock))
+        return 1;
+
+    unsigned long update_time = clock_get_time(self->clock);
+
+    if (clock_unlock(self->clock))
+        return 1;
+
+    // Iterate over valid process indices
+    int idx;
+    for (idx = 0; idx < MAX_USER_PROCS; ++idx)
+    {
+        // Get pid for process index
+        pid_t proc = self->__mem->page_table_map[idx];
+
+        // If process is mapped here
+        if (proc != -1)
+        {
+            // Get page table for process
+            __page_table* page_table = &self->__mem->page_tables[idx];
+
+            // If process is waiting on a page that should now be available
+            if (page_table->waiting && update_time >= page_table->wait_done)
+            {
+                // TODO: Bring the page in
+
+                // End the process's wait
+                page_table->waiting = 0;
+            }
+        }
+    }
+
+    return 0;
 }

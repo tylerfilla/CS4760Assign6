@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include <sys/fcntl.h>
 #include <unistd.h>
 
 #include "clock.h"
@@ -74,7 +73,7 @@ int main(int argc, char* argv[])
     g.clock = clock_new(CLOCK_MODE_IN);
 
     // Create memory manager user agent
-    g.memmgr = memmgr_new(MEMMGR_MODE_UA);
+    g.memmgr = memmgr_new(MEMMGR_MODE_UA, g.clock);
 
     while (1)
     {
@@ -98,21 +97,27 @@ int main(int argc, char* argv[])
         //
 
         if (memmgr_lock(g.memmgr))
-            return 1;
+            return 1;;
 
         // Choose a random virtual memory address to reference
         ptr_vm_t ptr = rand() % memmgr_get_vm_high_ptr(g.memmgr);
 
-        // Take a 50/50 chance to read or write to this address
-        int ref_result = -1;
-        switch (rand() % 2)
+        // Choose a random action to take on the pointer (read or write, 50/50)
+        int act = rand() % 2;
+
+        // The result of the memory reference
+        int ref_result;
+
+        // Perform the memory reference
+    do_mem_ref:
+        switch (act)
         {
         case 0:
             logger_log(g.logger, "child %d: reading from virtual memory address %#06lx", getpid(), ptr);
             ref_result = memmgr_read_ptr(g.memmgr, ptr);
             break;
         case 1:
-            logger_log(g.logger, "child %d: writing to   virtual memory address %#06lx", getpid(), ptr);
+            logger_log(g.logger, "child %d: writing to virtual memory address %#06lx", getpid(), ptr);
             ref_result = memmgr_write_ptr(g.memmgr, ptr);
             break;
         }
@@ -133,10 +138,17 @@ int main(int argc, char* argv[])
                 if (memmgr_lock(g.memmgr))
                     return 1;
 
-                // If address finally became available, break suspension
-                // The memory manager will have re-executed the read/write at this point
-                if (memmgr_is_resident(g.memmgr, ptr))
-                    break;
+                // If process is no longer waiting for the page
+                if (!memmgr_is_waiting(g.memmgr))
+                {
+                    logger_log(g.logger, "child %d: resuming: address %#06lx is now resident", getpid(), ptr);
+
+                    if (memmgr_unlock(g.memmgr))
+                        return 1;
+
+                    // Break suspension and retry the memory reference
+                    goto do_mem_ref;
+                }
 
                 if (memmgr_unlock(g.memmgr))
                     return 1;
@@ -145,9 +157,10 @@ int main(int argc, char* argv[])
                 usleep(100000);
             }
         }
-
-        // FIXME: Remove this
-        usleep(100000);
+        else
+        {
+            logger_log(g.logger, "child %d: read/write successful: virtual memory address was resident", getpid());
+        }
 
         // Break loop on interrupt
         if (g.interrupted)
