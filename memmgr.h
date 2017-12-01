@@ -70,7 +70,7 @@ typedef unsigned long ptr_phy_t;
 /**
  * Construct a memory manager instance.
  *
- * @param self The memory manager instance
+ * @param memmgr The memory manager instance
  * @param mode The memory manager mode
  * @return The memory manager instance, constructed
  */

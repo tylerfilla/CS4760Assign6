@@ -9,13 +9,18 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include <sys/fcntl.h>
 #include <unistd.h>
 
 #include "clock.h"
+#include "logger.h"
 #include "memmgr.h"
 
 static struct
 {
+    /** The client logger instance. */
+    logger_s* logger;
+
     /** The incoming clock instance. */
     clock_s* clock;
 
@@ -29,6 +34,10 @@ static struct
 static void handle_exit()
 {
     // Clean up IPC-heavy components
+    if (g.logger)
+    {
+        logger_delete(g.logger);
+    }
     if (g.clock)
     {
         clock_delete(g.clock);
@@ -57,6 +66,9 @@ int main(int argc, char* argv[])
     {
         perror("cannot handle SIGINT: sigaction(2) failed, so manual IPC cleanup possible");
     }
+
+    // Create client logger
+    g.logger = logger_new(LOGGER_MODE_CLIENT);
 
     // Create and start incoming (read-only) clock
     g.clock = clock_new(CLOCK_MODE_IN);
@@ -95,16 +107,14 @@ int main(int argc, char* argv[])
         switch (rand() % 2)
         {
         case 0:
-            printf("child %d: reading from virtual memory address %#06lx\n", getpid(), ptr);
+            logger_log(g.logger, "child %d: reading from virtual memory address %#06lx", getpid(), ptr);
             memmgr_read_ptr(g.memmgr, ptr);
             break;
         case 1:
-            printf("child %d: writing to   virtual memory address %#06lx\n", getpid(), ptr);
+            logger_log(g.logger, "child %d: writing to   virtual memory address %#06lx", getpid(), ptr);
             memmgr_write_ptr(g.memmgr, ptr);
             break;
         }
-
-        fflush(stdout);
 
         if (memmgr_unlock(g.memmgr))
             return 1;

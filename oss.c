@@ -10,11 +10,13 @@
 #include <string.h>
 #include <time.h>
 
+#include <sys/fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "clock.h"
 #include "config.h"
+#include "logger.h"
 #include "memmgr.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
@@ -26,6 +28,9 @@ static struct
 
     /** The open log file. */
     FILE* log_file;
+
+    /** The server logger instance. */
+    logger_s* logger;
 
     /** The outgoing clock instance. */
     clock_s* clock;
@@ -69,6 +74,10 @@ static void handle_exit()
     }
 
     // Clean up IPC-heavy components
+    if (g.logger)
+    {
+        logger_delete(g.logger);
+    }
     if (g.clock)
     {
         clock_delete(g.clock);
@@ -97,6 +106,7 @@ static void handle_sigchld(int sig)
     // printf(3) is not signal-safe, but POSIX allows write(2)
     // Using sizeof on a char array initialized via string literal includes the null terminator
     // Printing the null terminator is undesired, so subtract 1 from the size
+    // This does not go through the logger, since SysV semaphores are not POSIX signal-safe
     char death_notice_msg[] = "oss: received a child process death notice\n";
     write(STDOUT_FILENO, death_notice_msg, sizeof(death_notice_msg) - 1);
 
@@ -118,10 +128,6 @@ static pid_t launch_child()
     if (child_pid == 0)
     {
         // Fork succeeded, now in child
-
-        // Redirect child stdout to log file
-        // This is a hack to allow logging from children without communicating the log fd
-        dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
@@ -232,6 +238,9 @@ int main(int argc, char* argv[])
         perror("cannot handle SIGINT: sigaction(2) failed, so manual IPC cleanup possible");
     }
 
+    // Create server logger
+    g.logger = logger_new(LOGGER_MODE_SERVER);
+
     // Create and start outgoing clock
     g.clock = clock_new(CLOCK_MODE_OUT);
 
@@ -285,7 +294,7 @@ int main(int argc, char* argv[])
         // In practice, everything is so fast that this reports all deaths
         if (g.last_child_proc_dead)
         {
-            printf("oss: process %d has died\n", g.last_child_proc_dead);
+            logger_log(g.logger, "oss: process %d has died", g.last_child_proc_dead);
             g.last_child_proc_dead = 0;
         }
 
@@ -302,8 +311,8 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
-                printf("oss: spawned a new process %d (%ds %dns)\n", child, now_seconds, now_nanos);
-                printf("oss: there are now %d processes in the system\n", g.num_child_procs);
+                logger_log(g.logger, "oss: spawned a new process %d (%ds %dns)", child, now_seconds, now_nanos);
+                logger_log(g.logger, "oss: there are now %d processes in the system", g.num_child_procs);
             }
 
             // Schedule next spawn time
@@ -313,12 +322,25 @@ int main(int argc, char* argv[])
 
         // TODO: Do memory management somehow
 
-        fflush(stdout);
-
         // Block SIGCHLD to prevent lock interference
         sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
 
         if (memmgr_unlock(g.memmgr))
+            return 1;
+
+        if (logger_lock(g.logger))
+            return 1;
+
+        // Unblock SIGCHLD
+        sigprocmask(SIG_UNBLOCK, &sigset_sigchld, NULL);
+
+        // Dump log records to STDOUT
+        logger_dump(g.logger, stdout);
+
+        // Block SIGCHLD to prevent lock interference
+        sigprocmask(SIG_BLOCK, &sigset_sigchld, NULL);
+
+        if (logger_unlock(g.logger))
             return 1;
 
         // Unblock SIGCHLD

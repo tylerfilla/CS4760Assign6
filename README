@@ -27,6 +27,10 @@ Project Root
  |
  +-- config.h       (a header file with global configuration settings)
  |
+ +-- logger.c       (the main file for the logger library)
+ |
+ +-- logger.h       (the corresponding header file for logger.c)
+ |
  +-- Makefile
  |
  +-- oss.c          (the main file for the oss program)

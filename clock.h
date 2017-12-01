@@ -60,7 +60,7 @@ typedef struct
 /**
  * Construct a clock instance.
  *
- * @param self The clock instance
+ * @param clock The clock instance
  * @param mode The clock mode
  * @return The clock instance, constructed
  */
