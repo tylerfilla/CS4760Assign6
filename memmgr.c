@@ -600,5 +600,12 @@ int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
 
 int memmgr_is_resident(memmgr_s* self, ptr_vm_t ptr)
 {
-    return 0;
+    // Get user process pid
+    pid_t proc = getpid();
+
+    // Get page table for user process
+    __page_table* page_table = memmgr_get_page_table(self, proc);
+
+    // Determine if page frame is allocated
+    return page_table->frames[TRANSLATE_PAGE(ptr)] != NULL;
 }

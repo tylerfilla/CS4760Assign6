@@ -104,23 +104,25 @@ int main(int argc, char* argv[])
         ptr_vm_t ptr = rand() % memmgr_get_vm_high_ptr(g.memmgr);
 
         // Take a 50/50 chance to read or write to this address
-        int ref_res = -1;
+        int ref_result = -1;
         switch (rand() % 2)
         {
         case 0:
             logger_log(g.logger, "child %d: reading from virtual memory address %#06lx", getpid(), ptr);
-            ref_res = memmgr_read_ptr(g.memmgr, ptr);
+            ref_result = memmgr_read_ptr(g.memmgr, ptr);
             break;
         case 1:
             logger_log(g.logger, "child %d: writing to   virtual memory address %#06lx", getpid(), ptr);
-            ref_res = memmgr_write_ptr(g.memmgr, ptr);
+            ref_result = memmgr_write_ptr(g.memmgr, ptr);
             break;
         }
 
         if (memmgr_unlock(g.memmgr))
             return 1;
 
-        if (ref_res == 2)
+        // If recovering from a page fault
+        // Ideally, this functionality would be part of the OS, but this makes things cleaner in the simulation
+        if (ref_result == 2)
         {
             logger_log(g.logger, "child %d: page fault on reference to nonresident VM address %#06lx", getpid(), ptr);
             logger_log(g.logger, "child %d: suspending until memory is resident", getpid());
