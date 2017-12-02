@@ -102,12 +102,6 @@ typedef struct
  */
 struct __memmgr_mem_s
 {
-    /** The system memory page frames. */
-    __page_frame frames[SYSTEM_MEMORY_SIZE / PAGE_SIZE];
-
-    /** The process page tables. */
-    __page_table page_tables[MAX_USER_PROCS];
-
     /** In lieu of a page table base register, this maps between real system pids and page table indices. */
     pid_t page_table_map[MAX_USER_PROCS];
 
@@ -116,6 +110,12 @@ struct __memmgr_mem_s
 
     /** The total number of free frames. */
     unsigned long num_free_frames;
+
+    /** The system memory page frames. */
+    __page_frame frames[SYSTEM_MEMORY_SIZE / PAGE_SIZE];
+
+    /** The process page tables. */
+    __page_table page_tables[MAX_USER_PROCS];
 };
 
 static int memmgr_look_up_proc(memmgr_s* self, pid_t proc)
@@ -805,7 +805,10 @@ int memmgr_update(memmgr_s* self)
                     }
 
                     // Steal victim page from its process
-                    self->__mem->page_table_map[self->__mem->frames[page_num].process] = -1;
+                    if (page_frame->process != -1)
+                    {
+                        self->__mem->page_table_map[page_frame->process] = -1;
+                    }
                 }
                 else
                 {
@@ -867,15 +870,25 @@ void memmgr_dump_frames(memmgr_s* self, FILE* dest)
     fprintf(dest, "===== BEGIN PAGE FRAME DUMP =====\n");
     for (page_t page = 0; page < SYSTEM_MEMORY_SIZE / PAGE_SIZE; ++page)
     {
-        pid_t proc_pid = self->__mem->page_table_map[self->__mem->frames[page].process];
+        int proc_idx = self->__mem->frames[page].process;
+
+        // Skip never allocated frames
+        if (proc_idx == -1)
+        {
+            fprintf(dest, ". ");
+            continue;
+        }
+
+        pid_t proc_pid = self->__mem->page_table_map[proc_idx];
+
+        // Skip unallocated frames
         if (proc_pid == -1)
         {
             fprintf(dest, ". ");
+            continue;
         }
-        else
-        {
-            fprintf(dest, "%d ", proc_pid);
-        }
+
+        fprintf(dest, "%d ", proc_pid);
     }
     fprintf(dest, "\n===== END PAGE FRAME DUMP =====\n");
 }
