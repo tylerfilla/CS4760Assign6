@@ -834,24 +834,28 @@ int memmgr_update(memmgr_s* self)
         {
             __page_frame* page_frame = &self->__mem->frames[page];
 
-            // Clear reference bit
-            page_frame->flags &= ~PAGE_FRAME_BIT_REFERENCE;
-
-            // If page is modified, simulate a disk write
-            if ((page_frame->flags & PAGE_FRAME_BIT_DIRTY) != 0)
+            // If reference bit is not set, page it out
+            if ((page_frame->flags & PAGE_FRAME_BIT_REFERENCE) == 0)
             {
-                if (clock_lock(self->clock))
-                    return 1;
+                // If page is modified, simulate a disk write
+                if ((page_frame->flags & PAGE_FRAME_BIT_DIRTY) != 0)
+                {
+                    if (clock_lock(self->clock))
+                        return 1;
 
-                // Advance by 15ms to simulate writing page to disk
-                clock_advance(self->clock, 0, 15000000);
+                    // Advance by 15ms to simulate writing page to disk
+                    clock_advance(self->clock, 0, 15000000);
 
-                if (clock_unlock(self->clock))
-                    return 1;
+                    if (clock_unlock(self->clock))
+                        return 1;
+                }
+
+                // Remove page from its process
+                self->__mem->page_table_map[page_frame->process] = -1;
             }
 
-            // Remove page from its process
-            self->__mem->page_table_map[page_frame->process] = -1;
+            // Clear reference bit
+            page_frame->flags &= ~PAGE_FRAME_BIT_REFERENCE;
         }
     }
 
