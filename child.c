@@ -137,6 +137,7 @@ int main(int argc, char* argv[])
             {
                 if (memmgr_lock(g.memmgr))
                     return 1;
+                logger_log(g.logger, "child %d: locked in suspension", getpid());
 
                 // If process is no longer waiting for the page
                 if (!memmgr_is_waiting(g.memmgr))

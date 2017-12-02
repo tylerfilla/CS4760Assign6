@@ -186,6 +186,13 @@ static int clock_start_out(clock_s* self)
     self->semid = semid;
     self->__mem = shm;
 
+    //
+    // Initialization
+    //
+
+    self->__mem->nanos = 0;
+    self->__mem->seconds = 0;
+
     return 0;
 
 fail_sem:

@@ -249,6 +249,7 @@ int main(int argc, char* argv[])
 
     while (1)
     {
+        fprintf(stderr, "oss loop\n");
         //
         // Simulate Clock
         //
@@ -298,7 +299,7 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
-                logger_log(g.logger, "oss: spawned a new user process %d (%ds %dns)", child, now_seconds, now_nanos);
+                logger_log(g.logger, "oss: spawned a new user process %d (%us %uns)", child, now_seconds, now_nanos);
                 logger_log(g.logger, "oss: there are now %d processes in the system", g.num_child_procs);
 
                 if (logger_lock(g.logger))

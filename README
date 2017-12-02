@@ -25,6 +25,8 @@ is not too much of a problem in my book.
 As a side-effect of shared memory (abs. pointers within it not practical), I have to types of page number: VM page
 number and system page number. NOTE: Define them individually.
 
+Simulated page-outs last 15ms, just like simulated page-ins.
+
 Directory Structure
 ===================
 

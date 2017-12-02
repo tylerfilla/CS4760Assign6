@@ -74,6 +74,9 @@ typedef struct
 
     /** The time at which the page was paged in. */
     unsigned long time_page_in;
+
+    /** The process to which this page is allocated or -1 if not allocated. */
+    int process;
 } __page_frame;
 
 /**
@@ -714,17 +717,46 @@ int memmgr_update(memmgr_s* self)
                 // If no frames are unallocated
                 if (page_num == num_system_pages)
                 {
-                    // TODO: Perform second chance replacement
-                    fprintf(stderr, "need to do second chance page replacement\n");
+                    // Find oldest allocated page
+                    page_t oldest = -1;
+                    unsigned long oldest_time_page_in = 0xfffffffffffffffful;
+                    for (page_t num = 0; num < num_system_pages; ++num)
+                    {
+                        if (self->__mem->frames[num].time_page_in < oldest_time_page_in)
+                        {
+                            oldest = num;
+                            oldest_time_page_in = self->__mem->frames[num].time_page_in;
+                        }
+                    }
+
+                    // Get victim page frame
+                    __page_frame* page_frame = &self->__mem->frames[oldest];
+
+                    // If victim page was modified, simulate a page-out
+                    if ((page_frame->flags & PAGE_FRAME_BIT_DIRTY) != 0)
+                    {
+                        if (clock_lock(self->clock))
+                            return 1;
+
+                        // Advance by 15ms to simulate writing page to disk
+                        clock_advance(self->clock, 0, 15000000);
+
+                        if (clock_unlock(self->clock))
+                            return 1;
+                    }
+
+                    // Steal victim page from its process
+                    self->__mem->page_table_map[self->__mem->frames[oldest].process] = -1;
+
+                    page_num = oldest;
                 }
-                else
-                {
-                    // Allocate page frame to process
-                    page_table->map[page_table->wait_page] = page_num;
-                    __page_frame* page_frame = &self->__mem->frames[page_num];
-                    page_frame->flags = PAGE_FRAME_BIT_ALLOCATED;
-                    page_frame->time_page_in = update_time;
-                }
+
+                // Allocate selected page frame to process
+                page_table->map[page_table->wait_page] = page_num;
+                __page_frame* page_frame = &self->__mem->frames[page_num];
+                page_frame->flags = PAGE_FRAME_BIT_ALLOCATED;
+                page_frame->time_page_in = update_time;
+                page_frame->process = idx;
 
                 // End the process's wait
                 page_table->waiting = 0;
