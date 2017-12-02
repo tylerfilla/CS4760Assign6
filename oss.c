@@ -240,6 +240,7 @@ int main(int argc, char* argv[])
     dup2(fileno(g.log_file), STDOUT_FILENO);
 
     unsigned long next_spawn_time = 0;
+    unsigned long next_frame_dump_time = 0;
 
     while (1)
     {
@@ -309,6 +310,19 @@ int main(int argc, char* argv[])
             // Schedule next spawn time
             // Select a random time between now and 500 milliseconds from now
             next_spawn_time = now_time + (rand() % 500) * 1000000ul;
+        }
+
+        if (now_time >= next_frame_dump_time)
+        {
+            if (memmgr_lock(g.memmgr))
+                return 1;
+            memmgr_dump_frames(g.memmgr, stdout);
+            fflush(stdout);
+            if (memmgr_unlock(g.memmgr))
+                return 1;
+
+            // Schedule next frame dump time
+            next_frame_dump_time = now_time + 1000000000ul;
         }
 
         // Block SIGCHLD to prevent lock interference

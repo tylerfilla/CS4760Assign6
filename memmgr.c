@@ -861,3 +861,21 @@ int memmgr_update(memmgr_s* self)
 
     return 0;
 }
+
+void memmgr_dump_frames(memmgr_s* self, FILE* dest)
+{
+    fprintf(dest, "===== BEGIN PAGE FRAME DUMP =====\n");
+    for (page_t page = 0; page < SYSTEM_MEMORY_SIZE / PAGE_SIZE; ++page)
+    {
+        pid_t proc_pid = self->__mem->page_table_map[self->__mem->frames[page].process];
+        if (proc_pid == -1)
+        {
+            fprintf(dest, ". ");
+        }
+        else
+        {
+            fprintf(dest, "%d ", proc_pid);
+        }
+    }
+    fprintf(dest, "\n===== END PAGE FRAME DUMP =====\n");
+}

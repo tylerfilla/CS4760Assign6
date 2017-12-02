@@ -154,6 +154,6 @@ int memmgr_is_waiting(memmgr_s* memmgr);
  */
 int memmgr_update(memmgr_s* memmgr);
 
-void memmgr_dump_frames(memmgr_s* memmgr);
+void memmgr_dump_frames(memmgr_s* memmgr, FILE* dest);
 
 #endif // #ifndef MEMMGR_H
