@@ -149,8 +149,11 @@ static int memmgr_map_proc(memmgr_s* self, pid_t proc)
 
 static int memmgr_unmap_proc(memmgr_s* self, pid_t proc)
 {
-    // Look up the page table index for the process
+    // Look up page table index
     int idx = memmgr_look_up_proc(self, proc);
+
+    if (idx == -1)
+        return 1;
 
     // Unmap the process
     self->__mem->page_table_map[idx] = -1;
@@ -161,14 +164,14 @@ static int memmgr_unmap_proc(memmgr_s* self, pid_t proc)
 
 static __page_table* memmgr_get_page_table(memmgr_s* self, pid_t proc)
 {
-    // Loop up page table index
-    int page_table_idx = memmgr_look_up_proc(self, proc);
+    // Look up page table index
+    int idx = memmgr_look_up_proc(self, proc);
 
-    if (page_table_idx == -1)
+    if (idx == -1)
         return NULL;
 
     // Get actual page table
-    return &self->__mem->page_tables[page_table_idx];
+    return &self->__mem->page_tables[idx];
 }
 
 /**
@@ -351,6 +354,7 @@ static int memmgr_start_kernel(memmgr_s* self)
         for (page_t j = 0; j < USER_PROCESS_VM_SIZE / PAGE_SIZE; ++j)
         {
             self->__mem->page_tables[i].map[j] = -1;
+            self->__mem->page_tables[i].waiting = 0;
         }
     }
 
@@ -425,8 +429,8 @@ static int memmgr_stop_ua(memmgr_s* self)
 
     return 0;
 
-fail_shm:
 fail_unmap:
+fail_shm:
     return 1;
 }
 
@@ -587,6 +591,9 @@ int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
+    if (page_table == NULL)
+        return 0;
+
     // Get page number from VM address
     page_t page_num = TRANSLATE_PAGE(ptr);
 
@@ -633,6 +640,9 @@ int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
 
+    if (page_table == NULL)
+        return 0;
+
     // Get page number from VM address
     page_t page_num = TRANSLATE_PAGE(ptr);
 
@@ -668,6 +678,9 @@ int memmgr_is_waiting(memmgr_s* self)
 
     // Get page table for user process
     __page_table* page_table = memmgr_get_page_table(self, proc);
+
+    if (page_table == NULL)
+        return 0;
 
     return page_table->waiting;
 }

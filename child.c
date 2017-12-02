@@ -75,6 +75,8 @@ int main(int argc, char* argv[])
     // Create memory manager user agent
     g.memmgr = memmgr_new(MEMMGR_MODE_UA, g.clock);
 
+    unsigned long death_check_counter = 1000;
+
     while (1)
     {
         //
@@ -173,7 +175,7 @@ int main(int argc, char* argv[])
         }
         else
         {
-            logger_log(g.logger, "child %d: read/write successful: virtual memory address was resident", getpid());
+            logger_log(g.logger, "child %d: read/write completed", getpid());
         }
 
         // Break loop on interrupt
@@ -181,6 +183,24 @@ int main(int argc, char* argv[])
         {
             fprintf(stderr, "%d: interrupted\n", getpid());
             break;
+        }
+
+        // Check for natural death
+        if (--death_check_counter == 0)
+        {
+            // Add 1000 +/- 100 more references to the counter
+            death_check_counter = (unsigned long) (rand() % 1000 + (rand() % 200 - 100));
+
+            switch (rand() % 2)
+            {
+            case 0:
+                // Child will live
+                break;
+            case 1:
+                // Child will die
+                logger_log(g.logger, "child %d: dying of natural causes", getpid());
+                return 0;
+            }
         }
     }
 }

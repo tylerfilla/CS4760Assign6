@@ -327,6 +327,12 @@ logger_s* logger_construct(logger_s* self, int mode)
     if (self == NULL)
         return NULL;
 
+    self->mode = mode;
+    self->running = LOGGER_NOT_RUNNING;
+    self->shmid = -1;
+    self->semid = -1;
+    self->__mem = NULL;
+
     switch (mode)
     {
     case LOGGER_MODE_CLIENT:
