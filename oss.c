@@ -15,7 +15,6 @@
 
 #include "clock.h"
 #include "config.h"
-#include "logger.h"
 #include "memmgr.h"
 
 #define DEFAULT_LOG_FILE_PATH "oss.log"
@@ -27,9 +26,6 @@ static struct
 
     /** The open log file. */
     FILE* log_file;
-
-    /** The server logger instance. */
-    logger_s* logger;
 
     /** The outgoing clock instance. */
     clock_s* clock;
@@ -73,10 +69,6 @@ static void handle_exit()
     }
 
     // Clean up IPC-heavy components
-    if (g.logger)
-    {
-        logger_delete(g.logger);
-    }
     if (g.clock)
     {
         clock_delete(g.clock);
@@ -127,6 +119,9 @@ static pid_t launch_child()
     if (child_pid == 0)
     {
         // Fork succeeded, now in child
+
+        // Redirect STDOUT to log file
+        dup2(fileno(g.log_file), STDOUT_FILENO);
 
         // Swap in the child image
         if (execv("./child", (char* []) { "./child", NULL }))
@@ -233,9 +228,6 @@ int main(int argc, char* argv[])
         perror("cannot handle SIGINT: sigaction(2) failed, so manual IPC cleanup possible");
     }
 
-    // Create server logger
-    g.logger = logger_new(LOGGER_MODE_SERVER);
-
     // Create and start outgoing clock
     g.clock = clock_new(CLOCK_MODE_OUT);
 
@@ -243,6 +235,9 @@ int main(int argc, char* argv[])
     g.memmgr = memmgr_new(MEMMGR_MODE_KERNEL, g.clock);
 
     fprintf(stderr, "press ^C to stop the simulation\n");
+
+    // Redirect STDOUT to log file
+    dup2(fileno(g.log_file), STDOUT_FILENO);
 
     unsigned long next_spawn_time = 0;
 
@@ -280,7 +275,7 @@ int main(int argc, char* argv[])
         // In practice, everything is so fast that this reports all deaths
         if (g.last_child_proc_dead)
         {
-            logger_log(g.logger, "oss: user process %d has died", g.last_child_proc_dead);
+            printf("oss: user process %d has died\n", g.last_child_proc_dead);
             g.last_child_proc_dead = 0;
         }
 
@@ -297,17 +292,8 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
-                logger_log(g.logger, "oss: spawned a new user process %d (%us %uns)", child, now_seconds, now_nanos);
-                logger_log(g.logger, "oss: there are now %d processes in the system", g.num_child_procs);
-
-                if (logger_lock(g.logger))
-                    return 1;
-
-                // Dump accumulated log records to the log file
-                logger_dump(g.logger, stdout);
-
-                if (logger_unlock(g.logger))
-                    return 1;
+                printf("oss: spawned a new user process %d (%us %uns)\n", child, now_seconds, now_nanos);
+                printf("oss: there are now %d processes in the system\n", g.num_child_procs);
             }
 
             // Schedule next spawn time
@@ -327,15 +313,6 @@ int main(int argc, char* argv[])
             return 1;
 
         if (memmgr_unlock(g.memmgr))
-            return 1;
-
-        if (logger_lock(g.logger))
-            return 1;
-
-        // Dump accumulated log records to the log file
-        logger_dump(g.logger, g.log_file);
-
-        if (logger_unlock(g.logger))
             return 1;
 
         // Unblock SIGCHLD

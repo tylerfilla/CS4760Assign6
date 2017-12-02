@@ -12,14 +12,10 @@
 #include <unistd.h>
 
 #include "clock.h"
-#include "logger.h"
 #include "memmgr.h"
 
 static struct
 {
-    /** The client logger instance. */
-    logger_s* logger;
-
     /** The incoming clock instance. */
     clock_s* clock;
 
@@ -33,10 +29,6 @@ static struct
 static void handle_exit()
 {
     // Clean up IPC-heavy components
-    if (g.logger)
-    {
-        logger_delete(g.logger);
-    }
     if (g.clock)
     {
         clock_delete(g.clock);
@@ -65,9 +57,6 @@ int main(int argc, char* argv[])
     {
         perror("cannot handle SIGINT: sigaction(2) failed, so manual IPC cleanup possible");
     }
-
-    // Create client logger
-    g.logger = logger_new(LOGGER_MODE_CLIENT);
 
     // Create and start incoming (read-only) clock
     g.clock = clock_new(CLOCK_MODE_IN);
@@ -114,11 +103,11 @@ int main(int argc, char* argv[])
         switch (act)
         {
         case 0:
-            logger_log(g.logger, "child %d: reading from virtual memory address %#06lx", getpid(), ptr);
+            printf("child %d: reading from virtual memory address %#06lx\n", getpid(), ptr);
             ref_result = memmgr_read_ptr(g.memmgr, ptr);
             break;
         case 1:
-            logger_log(g.logger, "child %d: writing to virtual memory address %#06lx", getpid(), ptr);
+            printf("child %d: writing to virtual memory address %#06lx\n", getpid(), ptr);
             ref_result = memmgr_write_ptr(g.memmgr, ptr);
             break;
         }
@@ -130,8 +119,8 @@ int main(int argc, char* argv[])
         // Ideally, this functionality would be part of the OS, but this makes things cleaner in the simulation
         if (ref_result == 2)
         {
-            logger_log(g.logger, "child %d: page fault on reference to nonresident VM address %#06lx", getpid(), ptr);
-            logger_log(g.logger, "child %d: suspending until memory is resident", getpid());
+            printf("child %d: page fault on reference to nonresident VM address %#06lx\n", getpid(), ptr);
+            printf("child %d: suspending until memory is resident\n", getpid());
 
             // Suspend the process until the address is available
             while (1)
@@ -142,17 +131,17 @@ int main(int argc, char* argv[])
                 // If process is no longer waiting for the page
                 if (!memmgr_is_waiting(g.memmgr))
                 {
-                    logger_log(g.logger, "child %d: resuming: address %#06lx is now resident", getpid(), ptr);
+                    printf("child %d: resuming: address %#06lx is now resident\n", getpid(), ptr);
 
                     // Re-perform the memory reference
                     switch (act)
                     {
                     case 0:
-                        logger_log(g.logger, "child %d: re-reading from virtual memory address %#06lx", getpid(), ptr);
+                        printf("child %d: re-reading from virtual memory address %#06lx\n", getpid(), ptr);
                         memmgr_read_ptr(g.memmgr, ptr);
                         break;
                     case 1:
-                        logger_log(g.logger, "child %d: re-writing to virtual memory address %#06lx", getpid(), ptr);
+                        printf("child %d: re-writing to virtual memory address %#06lx\n", getpid(), ptr);
                         memmgr_write_ptr(g.memmgr, ptr);
                         break;
                     }
@@ -160,7 +149,7 @@ int main(int argc, char* argv[])
                     if (memmgr_unlock(g.memmgr))
                         return 1;
 
-                    logger_log(g.logger, "child %d: read/write completed", getpid());
+                    printf("child %d: read/write completed\n", getpid());
 
                     // Break suspension
                     break;
@@ -175,7 +164,7 @@ int main(int argc, char* argv[])
         }
         else
         {
-            logger_log(g.logger, "child %d: read/write completed", getpid());
+            printf("child %d: read/write completed\n", getpid());
         }
 
         // Break loop on interrupt
@@ -198,7 +187,7 @@ int main(int argc, char* argv[])
                 break;
             case 1:
                 // Child will die
-                logger_log(g.logger, "child %d: dying of natural causes", getpid());
+                printf("child %d: dying of natural causes\n", getpid());
                 return 0;
             }
         }

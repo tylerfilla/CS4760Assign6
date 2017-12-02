@@ -6,11 +6,11 @@
 
 AR=ar
 CC=gcc
-CFLAGS=-g -Wall -std=gnu99
+CFLAGS=-Wall -std=gnu99
 LDFLAGS=
 
 EXECUTABLES=child oss
-LIBRARIES=clock.a memmgr.a logger.a
+LIBRARIES=clock.a memmgr.a
 
 #
 # Patterns
