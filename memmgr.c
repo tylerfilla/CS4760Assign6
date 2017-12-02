@@ -730,20 +730,33 @@ int memmgr_update(memmgr_s* self)
                 // If no frames are unallocated
                 if (page_num == num_system_pages)
                 {
-                    // Find oldest allocated page
-                    page_t oldest = -1;
-                    unsigned long oldest_time_page_in = 0xfffffffffffffffful;
+                    // Find oldest allocated page, preferably with reference bit unset
+                    page_t oldest_unref = -1;
+                    unsigned long oldest_unref_time_page_in = 0xfffffffffffffffful;
+                    page_t oldest_absolute = -1;
+                    unsigned long oldest_absolute_time_page_in = 0xfffffffffffffffful;
                     for (page_t num = 0; num < num_system_pages; ++num)
                     {
-                        if (self->__mem->frames[num].time_page_in < oldest_time_page_in)
+                        __page_frame* page_frame = &self->__mem->frames[num];
+
+                        // Find oldest unreferenced frame
+                        if (page_frame->time_page_in < oldest_absolute_time_page_in
+                                && (page_frame->flags & PAGE_FRAME_BIT_REFERENCE) != 0)
                         {
-                            oldest = num;
-                            oldest_time_page_in = self->__mem->frames[num].time_page_in;
+                            oldest_absolute = num;
+                            oldest_absolute_time_page_in = page_frame->time_page_in;
+                        }
+
+                        // Find absolute oldest frame
+                        if (page_frame->time_page_in < oldest_absolute_time_page_in)
+                        {
+                            oldest_absolute = num;
+                            oldest_absolute_time_page_in = page_frame->time_page_in;
                         }
                     }
 
                     // Get victim page frame
-                    __page_frame* page_frame = &self->__mem->frames[oldest];
+                    __page_frame* page_frame = &self->__mem->frames[oldest_absolute];
 
                     // If victim page was modified, simulate a page-out
                     if ((page_frame->flags & PAGE_FRAME_BIT_DIRTY) != 0)
@@ -759,9 +772,9 @@ int memmgr_update(memmgr_s* self)
                     }
 
                     // Steal victim page from its process
-                    self->__mem->page_table_map[self->__mem->frames[oldest].process] = -1;
+                    self->__mem->page_table_map[self->__mem->frames[oldest_absolute].process] = -1;
 
-                    page_num = oldest;
+                    page_num = oldest_absolute;
                 }
 
                 // Allocate selected page frame to process
