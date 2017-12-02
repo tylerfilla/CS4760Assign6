@@ -740,11 +740,11 @@ int memmgr_update(memmgr_s* self)
                         __page_frame* page_frame = &self->__mem->frames[num];
 
                         // Find oldest unreferenced frame
-                        if (page_frame->time_page_in < oldest_absolute_time_page_in
-                                && (page_frame->flags & PAGE_FRAME_BIT_REFERENCE) != 0)
+                        if (page_frame->time_page_in < oldest_unref_time_page_in
+                                && (page_frame->flags & PAGE_FRAME_BIT_REFERENCE) == 0)
                         {
-                            oldest_absolute = num;
-                            oldest_absolute_time_page_in = page_frame->time_page_in;
+                            oldest_unref = num;
+                            oldest_unref_time_page_in = page_frame->time_page_in;
                         }
 
                         // Find absolute oldest frame
@@ -755,8 +755,19 @@ int memmgr_update(memmgr_s* self)
                         }
                     }
 
+                    // If an oldest unreferenced frame exists, use it
+                    // Otherwise, use the absolute oldest frame
+                    if (oldest_unref != -1)
+                    {
+                        page_num = oldest_unref;
+                    }
+                    else
+                    {
+                        page_num = oldest_absolute;
+                    }
+
                     // Get victim page frame
-                    __page_frame* page_frame = &self->__mem->frames[oldest_absolute];
+                    __page_frame* page_frame = &self->__mem->frames[page_num];
 
                     // If victim page was modified, simulate a page-out
                     if ((page_frame->flags & PAGE_FRAME_BIT_DIRTY) != 0)
@@ -772,9 +783,7 @@ int memmgr_update(memmgr_s* self)
                     }
 
                     // Steal victim page from its process
-                    self->__mem->page_table_map[self->__mem->frames[oldest_absolute].process] = -1;
-
-                    page_num = oldest_absolute;
+                    self->__mem->page_table_map[self->__mem->frames[page_num].process] = -1;
                 }
 
                 // Allocate selected page frame to process
