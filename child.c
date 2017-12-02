@@ -109,7 +109,6 @@ int main(int argc, char* argv[])
         int ref_result;
 
         // Perform the memory reference
-    do_mem_ref:
         switch (act)
         {
         case 0:
@@ -137,16 +136,32 @@ int main(int argc, char* argv[])
             {
                 if (memmgr_lock(g.memmgr))
                     return 1;
-                logger_log(g.logger, "child %d: locked in suspension", getpid());
 
                 // If process is no longer waiting for the page
                 if (!memmgr_is_waiting(g.memmgr))
                 {
                     logger_log(g.logger, "child %d: resuming: address %#06lx is now resident", getpid(), ptr);
 
-                    // Break suspension and retry the memory reference
-                    // Leave the memory manager locked
-                    goto do_mem_ref;
+                    // Re-perform the memory reference
+                    switch (act)
+                    {
+                    case 0:
+                        logger_log(g.logger, "child %d: re-reading from virtual memory address %#06lx", getpid(), ptr);
+                        memmgr_read_ptr(g.memmgr, ptr);
+                        break;
+                    case 1:
+                        logger_log(g.logger, "child %d: re-writing to virtual memory address %#06lx", getpid(), ptr);
+                        memmgr_write_ptr(g.memmgr, ptr);
+                        break;
+                    }
+
+                    if (memmgr_unlock(g.memmgr))
+                        return 1;
+
+                    logger_log(g.logger, "child %d: read/write completed", getpid());
+
+                    // Break suspension
+                    break;
                 }
 
                 if (memmgr_unlock(g.memmgr))

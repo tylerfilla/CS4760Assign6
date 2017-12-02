@@ -348,7 +348,7 @@ static int memmgr_start_kernel(memmgr_s* self)
     {
         self->__mem->page_table_map[i] = -1;
 
-        for (page_t j = 0; j < SYSTEM_MEMORY_SIZE / PAGE_SIZE; ++j)
+        for (page_t j = 0; j < USER_PROCESS_VM_SIZE / PAGE_SIZE; ++j)
         {
             self->__mem->page_tables[i].map[j] = -1;
         }

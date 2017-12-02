@@ -249,7 +249,6 @@ int main(int argc, char* argv[])
 
     while (1)
     {
-        fprintf(stderr, "oss loop\n");
         //
         // Simulate Clock
         //
