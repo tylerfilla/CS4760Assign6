@@ -10,7 +10,6 @@
 #include <string.h>
 #include <time.h>
 
-#include <sys/fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
