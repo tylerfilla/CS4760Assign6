@@ -112,6 +112,8 @@ int main(int argc, char* argv[])
             break;
         }
 
+        fflush(stdout);
+
         if (memmgr_unlock(g.memmgr))
             return 1;
 
@@ -119,8 +121,13 @@ int main(int argc, char* argv[])
         // Ideally, this functionality would be part of the OS, but this makes things cleaner in the simulation
         if (ref_result == 2)
         {
+            if (memmgr_lock(g.memmgr))
+                return 1;
             printf("child %d: page fault on reference to nonresident VM address %#06lx\n", getpid(), ptr);
             printf("child %d: suspending until memory is resident\n", getpid());
+            fflush(stdout);
+            if (memmgr_unlock(g.memmgr))
+                return 1;
 
             // Suspend the process until the address is available
             while (1)
@@ -146,14 +153,17 @@ int main(int argc, char* argv[])
                         break;
                     }
 
+                    printf("child %d: read/write completed\n", getpid());
+                    fflush(stdout);
+
                     if (memmgr_unlock(g.memmgr))
                         return 1;
-
-                    printf("child %d: read/write completed\n", getpid());
 
                     // Break suspension
                     break;
                 }
+
+                fflush(stdout);
 
                 if (memmgr_unlock(g.memmgr))
                     return 1;

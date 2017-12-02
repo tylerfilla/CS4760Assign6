@@ -275,7 +275,12 @@ int main(int argc, char* argv[])
         // In practice, everything is so fast that this reports all deaths
         if (g.last_child_proc_dead)
         {
+            if (memmgr_lock(g.memmgr))
+                return 1;
             printf("oss: user process %d has died\n", g.last_child_proc_dead);
+            fflush(stdout);
+            if (memmgr_unlock(g.memmgr))
+                return 1;
             g.last_child_proc_dead = 0;
         }
 
@@ -292,8 +297,13 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
+                if (memmgr_lock(g.memmgr))
+                    return 1;
                 printf("oss: spawned a new user process %d (%us %uns)\n", child, now_seconds, now_nanos);
                 printf("oss: there are now %d processes in the system\n", g.num_child_procs);
+                fflush(stdout);
+                if (memmgr_unlock(g.memmgr))
+                    return 1;
             }
 
             // Schedule next spawn time
