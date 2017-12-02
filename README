@@ -2,30 +2,23 @@ Tyler Filla
 CS 4760
 Assignment 6
 
-Preamble
-========
+Information
+===========
 
-Since the simulated processes don't have a page table register (research), I map the processes' pids to page tables in
-a shared memory array.
+This project simulates the second-chance paging algorithm with a number of actual processes. The simulated operating
+system environment does not perform scheduling, instead relying on actual OS facilities in this regard.
 
-User mode reads and writes are coarsely simulated. There is no data read/written, but a type called ptr_vm_t is used to
-"point to" a location in simulated virtual memory.
+Two programs, oss and child, comprise the system. OS duties are, for the sake of the simulation, split between oss and
+child; however, a designated area exists in child to represent user mode operations. Suspension, for instance, is
+simulated in the child program so as not to block oss. If scheduling were simulated, I could have done this.
 
-Since no scheduling is simulated, oss really has no control over the children, so suspension is simulated in the
-children when memmgr informs them of page faults.
+Since the simulated processes don't have a page table base register, I map the processes' pids to page tables in an
+array in shared memory. Every memory reference involves looking up the process's page table. A special type, ptr_vm_t,
+is used to represent "pointers" to simulated addresses in child process's virtual memory address spaces.
 
-There is no queue structure for the mythical memory backing store device. Instead, since each process can only wait on
-one page at a time, a single array with MAX_USER_PROCS of wait buffers is used. Each wait buffer identifies the waiting
-process and the time at which its simulated wait is lifted. oss lifts the waits every now and then based on the clock.
-
-Due to the corners cut for the simulation, I found it most efficient to let child processes advance the clock by 10ns
-themselves when they read/write. The reads/writes are already simulated partially in oss and partially in child, so this
-is not too much of a problem in my book.
-
-As a side-effect of shared memory (abs. pointers within it not practical), I have to types of page number: VM page
-number and system page number. NOTE: Define them individually.
-
-Simulated page-outs last 15ms, just like simulated page-ins.
+There is no queue structure for the simulated memory backing store device. Instead, since each process can only wait on
+one page at a time, wait parameters are stored on a per-process basis. oss will periodically "fulfill" the I/O requests
+of those processes whose wait times expire (by the logical clock). This has the same effect.
 
 Directory Structure
 ===================
@@ -39,10 +32,6 @@ Project Root
  +-- clock.h        (the corresponding header file for clock.c)
  |
  +-- config.h       (a header file with global configuration settings)
- |
- +-- logger.c       (the main file for the logger library)
- |
- +-- logger.h       (the corresponding header file for logger.c)
  |
  +-- Makefile
  |
