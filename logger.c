@@ -428,16 +428,29 @@ int logger_submit(logger_s* self, const char* msg, size_t msg_len)
         return 1;
 
     // Copy the log record message into the buffer
-    size_t len = msg_len < RECORD_MSG_MAX ? msg_len : RECORD_MSG_MAX;
-    strncpy(self->__mem->buffer[self->__mem->num_buffered_records], msg, len);
-    self->__mem->buffer[self->__mem->num_buffered_records][len - 1] = '\0';
-    self->__mem->num_buffered_records++;
+    //size_t len = msg_len < RECORD_MSG_MAX ? msg_len : RECORD_MSG_MAX;
+    //strncpy(self->__mem->buffer[self->__mem->num_buffered_records], msg, len);
+    //self->__mem->buffer[self->__mem->num_buffered_records][len - 1] = '\0';
+    //self->__mem->num_buffered_records++;
 
     return 0;
 }
 
 int logger_log(logger_s* self, const char* fmt, ...)
 {
+    va_list args;
+    va_start(args, fmt);
+
+    // Build the formatted message
+    char msg[RECORD_MSG_MAX];
+    vsnprintf(msg, RECORD_MSG_MAX, fmt, args);
+    msg[RECORD_MSG_MAX - 1] = '\0';
+
+    va_end(args);
+
+    fprintf(stderr, "%s\n", msg);
+
+    /*
     va_list args;
     va_start(args, fmt);
 
@@ -457,6 +470,7 @@ int logger_log(logger_s* self, const char* fmt, ...)
 
     if (logger_unlock(self))
         return 3;
+        */
 
     return 0;
 }

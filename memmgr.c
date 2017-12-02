@@ -45,19 +45,24 @@
 #define TRANSLATE_PAGE(ptr) ((0x7c00ul & (ptr)) >> 10)
 
 /**
+ * Page frame allocated bit. Indicates that a page is allocated to a process.
+ */
+#define PAGE_FRAME_BIT_ALLOCATED (1ul << 0)
+
+/**
  * Page frame dirty bit. Indicates that a page was modified since last page-in.
  */
-#define PAGE_FRAME_BIT_DIRTY (1ul << 0)
+#define PAGE_FRAME_BIT_DIRTY (1ul << 1)
 
 /**
  * Page frame reference bit. Indicates that a page was recently referenced (read/written).
  */
-#define PAGE_FRAME_BIT_REFERENCE (1ul << 1)
+#define PAGE_FRAME_BIT_REFERENCE (1ul << 2)
 
 /**
  * A page number.
  */
-typedef unsigned long page_t;
+typedef long page_t;
 
 /**
  * A page frame. Pages themselves are simulated as blocks of heap memory.
@@ -65,7 +70,7 @@ typedef unsigned long page_t;
 typedef struct
 {
     /** A bitfield of flags governing operation. */
-    unsigned int bits;
+    unsigned int flags;
 
     /** The time at which the page was paged in. */
     unsigned long time_page_in;
@@ -76,8 +81,8 @@ typedef struct
  */
 typedef struct
 {
-    /** The page frames. */
-    __page_frame* frames[USER_PROCESS_VM_SIZE / PAGE_SIZE];
+    /** The page frames. This maps VM page numbers to system page numbers. */
+    page_t map[USER_PROCESS_VM_SIZE / PAGE_SIZE];
 
     /** Nonzero if the process is waiting on a page. */
     int waiting;
@@ -95,7 +100,7 @@ typedef struct
 struct __memmgr_mem_s
 {
     /** The system memory page frames. */
-    __page_frame system_frames[SYSTEM_MEMORY_SIZE / PAGE_SIZE];
+    __page_frame frames[SYSTEM_MEMORY_SIZE / PAGE_SIZE];
 
     /** The process page tables. */
     __page_table page_tables[MAX_USER_PROCS];
@@ -333,12 +338,17 @@ static int memmgr_start_kernel(memmgr_s* self)
     self->semid = semid;
     self->__mem = shm;
 
-    memset(self->__mem->system_frames, 0, sizeof(self->__mem->system_frames));
+    memset(self->__mem->frames, 0, sizeof(self->__mem->frames));
     memset(self->__mem->page_tables, 0, sizeof(self->__mem->page_tables));
 
     for (int i = 0; i < MAX_USER_PROCS; ++i)
     {
         self->__mem->page_table_map[i] = -1;
+
+        for (page_t j = 0; j < SYSTEM_MEMORY_SIZE / PAGE_SIZE; ++j)
+        {
+            self->__mem->page_tables[i].map[j] = -1;
+        }
     }
 
     self->__mem->num_procs_mapped = 0;
@@ -577,15 +587,12 @@ int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
     // Get page number from VM address
     page_t page_num = TRANSLATE_PAGE(ptr);
 
-    // Get page frame for VM pointer
-    __page_frame* page_frame = page_table->frames[page_num];
-
     // If page frame is not allocated, we have a page fault
-    if (page_frame == NULL)
+    if (page_table->map[page_num] == -1)
     {
         // Put process in I/O queue for page
         // This is simulated by storing the process's wait parameters in its page table
-        // Schedule the page to become available in 15 milliseconds (FIXME: about 15ms)
+        // Schedule the page to become available in 15 milliseconds
         page_table->waiting = 1;
         page_table->wait_page = page_num;
         page_table->wait_done = read_time + 15000000ul;
@@ -595,8 +602,11 @@ int memmgr_read_ptr(memmgr_s* self, ptr_vm_t ptr)
         return 2;
     }
 
+    // Get page frame for VM pointer
+    __page_frame* page_frame = &self->__mem->frames[page_table->map[page_num]];
+
     // Set reference bit
-    page_frame->bits |= PAGE_FRAME_BIT_REFERENCE;
+    page_frame->flags |= PAGE_FRAME_BIT_REFERENCE;
 
     return 0;
 }
@@ -623,15 +633,12 @@ int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
     // Get page number from VM address
     page_t page_num = TRANSLATE_PAGE(ptr);
 
-    // Get page frame for VM pointer
-    __page_frame* page_frame = page_table->frames[page_num];
-
     // If page frame is not allocated, we have a page fault
-    if (page_frame == NULL)
+    if (page_table->map[page_num] == -1)
     {
         // Put process in I/O queue for page
         // This is simulated by storing the process's wait parameters in its page table
-        // Schedule the page to become available in 15 milliseconds (FIXME: about 15ms?)
+        // Schedule the page to become available in 15 milliseconds
         page_table->waiting = 1;
         page_table->wait_page = page_num;
         page_table->wait_done = write_time + 15000000ul;
@@ -641,11 +648,12 @@ int memmgr_write_ptr(memmgr_s* self, ptr_vm_t ptr)
         return 2;
     }
 
-    // Set reference bit
-    page_frame->bits |= PAGE_FRAME_BIT_REFERENCE;
+    // Get page frame for VM pointer
+    __page_frame* page_frame = &self->__mem->frames[page_table->map[page_num]];
 
-    // Set dirty bit
-    page_frame->bits |= PAGE_FRAME_BIT_DIRTY;
+    // Set reference and dirty bits
+    page_frame->flags |= PAGE_FRAME_BIT_REFERENCE;
+    page_frame->flags |= PAGE_FRAME_BIT_DIRTY;
 
     return 0;
 }
@@ -687,7 +695,36 @@ int memmgr_update(memmgr_s* self)
             // If process is waiting on a page that should now be available
             if (page_table->waiting && update_time >= page_table->wait_done)
             {
-                // TODO: Bring the page in
+                // To simulate page-in, we just pick an unallocated frame from system memory
+                // There is no actual data that needs to be read from disk
+                // If no frames are available, we do the second-chance page replacement algorithm
+
+                // The number of pages in the system
+                // This should probably get #define'd out
+                unsigned long num_system_pages = SYSTEM_MEMORY_SIZE / PAGE_SIZE;
+
+                // Find first unallocated system frame
+                page_t page_num;
+                for (page_num = 0; page_num < num_system_pages; ++page_num)
+                {
+                    if ((self->__mem->frames[page_num].flags & PAGE_FRAME_BIT_ALLOCATED) == 0)
+                        break;
+                }
+
+                // If no frames are unallocated
+                if (page_num == num_system_pages)
+                {
+                    // TODO: Perform second chance replacement
+                    fprintf(stderr, "need to do second chance page replacement\n");
+                }
+                else
+                {
+                    // Allocate page frame to process
+                    page_table->map[page_table->wait_page] = page_num;
+                    __page_frame* page_frame = &self->__mem->frames[page_num];
+                    page_frame->flags = PAGE_FRAME_BIT_ALLOCATED;
+                    page_frame->time_page_in = update_time;
+                }
 
                 // End the process's wait
                 page_table->waiting = 0;

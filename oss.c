@@ -281,7 +281,7 @@ int main(int argc, char* argv[])
         // In practice, everything is so fast that this reports all deaths
         if (g.last_child_proc_dead)
         {
-            logger_log(g.logger, "oss: process %d has died", g.last_child_proc_dead);
+            logger_log(g.logger, "oss: user process %d has died", g.last_child_proc_dead);
             g.last_child_proc_dead = 0;
         }
 
@@ -298,8 +298,17 @@ int main(int argc, char* argv[])
                 // Launch a child process
                 pid_t child = launch_child();
 
-                logger_log(g.logger, "oss: spawned a new process %d (%ds %dns)", child, now_seconds, now_nanos);
+                logger_log(g.logger, "oss: spawned a new user process %d (%ds %dns)", child, now_seconds, now_nanos);
                 logger_log(g.logger, "oss: there are now %d processes in the system", g.num_child_procs);
+
+                if (logger_lock(g.logger))
+                    return 1;
+
+                // Dump accumulated log records to the log file
+                logger_dump(g.logger, stdout);
+
+                if (logger_unlock(g.logger))
+                    return 1;
             }
 
             // Schedule next spawn time

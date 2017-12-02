@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
         //
 
         if (memmgr_lock(g.memmgr))
-            return 1;;
+            return 1;
 
         // Choose a random virtual memory address to reference
         ptr_vm_t ptr = rand() % memmgr_get_vm_high_ptr(g.memmgr);
@@ -143,10 +143,8 @@ int main(int argc, char* argv[])
                 {
                     logger_log(g.logger, "child %d: resuming: address %#06lx is now resident", getpid(), ptr);
 
-                    if (memmgr_unlock(g.memmgr))
-                        return 1;
-
                     // Break suspension and retry the memory reference
+                    // Leave the memory manager locked
                     goto do_mem_ref;
                 }
 
