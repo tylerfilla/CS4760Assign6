@@ -113,6 +113,9 @@ struct __memmgr_mem_s
 
     /** The number of processes mapped to page tables. */
     int num_procs_mapped;
+
+    /** The total number of free frames. */
+    unsigned long num_free_frames;
 };
 
 static int memmgr_look_up_proc(memmgr_s* self, pid_t proc)
@@ -359,6 +362,7 @@ static int memmgr_start_kernel(memmgr_s* self)
     }
 
     self->__mem->num_procs_mapped = 0;
+    self->__mem->num_free_frames = SYSTEM_MEMORY_SIZE / PAGE_SIZE;
 
     return 0;
 
@@ -404,6 +408,24 @@ static int memmgr_stop_ua(memmgr_s* self)
 {
     if (!self->running)
         return 1;
+
+    __page_table* page_table = memmgr_get_page_table(self, getpid());
+
+    if (page_table != NULL)
+    {
+        // Release all the process's pages
+        for (page_t page = 0; page < USER_PROCESS_VM_SIZE / PAGE_SIZE; ++page)
+        {
+            page_t page_sys = page_table->map[page];
+
+            // Skip unmapped pages
+            if (page_sys == -1)
+                continue;
+
+            self->__mem->frames[page_sys].process = -1;
+            self->__mem->num_free_frames++;
+        }
+    }
 
     // Unmap the client process
     if (memmgr_unmap_proc(self, getpid()))
@@ -784,6 +806,12 @@ int memmgr_update(memmgr_s* self)
 
                     // Steal victim page from its process
                     self->__mem->page_table_map[self->__mem->frames[page_num].process] = -1;
+                }
+                else
+                {
+                    // A frame was unallocated
+                    // We will claim it, so decrement free frame count
+                    self->__mem->num_free_frames--;
                 }
 
                 // Allocate selected page frame to process
