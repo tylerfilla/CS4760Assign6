@@ -791,7 +791,7 @@ int memmgr_update(memmgr_s* self)
                     // Get victim page frame
                     __page_frame* page_frame = &self->__mem->frames[page_num];
 
-                    // If victim page was modified, simulate a page-out
+                    // If victim page is modified, simulate a disk write
                     if ((page_frame->flags & PAGE_FRAME_BIT_DIRTY) != 0)
                     {
                         if (clock_lock(self->clock))
@@ -824,6 +824,34 @@ int memmgr_update(memmgr_s* self)
                 // End the process's wait
                 page_table->waiting = 0;
             }
+        }
+    }
+
+    // If less than 10% pages remain, do sweep
+    if (self->__mem->num_free_frames < (SYSTEM_MEMORY_SIZE / PAGE_SIZE) / 10)
+    {
+        for (page_t page = 0; page < SYSTEM_MEMORY_SIZE / PAGE_SIZE; ++page)
+        {
+            __page_frame* page_frame = &self->__mem->frames[page];
+
+            // Clear reference bit
+            page_frame->flags &= ~PAGE_FRAME_BIT_REFERENCE;
+
+            // If page is modified, simulate a disk write
+            if ((page_frame->flags & PAGE_FRAME_BIT_DIRTY) != 0)
+            {
+                if (clock_lock(self->clock))
+                    return 1;
+
+                // Advance by 15ms to simulate writing page to disk
+                clock_advance(self->clock, 0, 15000000);
+
+                if (clock_unlock(self->clock))
+                    return 1;
+            }
+
+            // Remove page from its process
+            self->__mem->page_table_map[page_frame->process] = -1;
         }
     }
 
